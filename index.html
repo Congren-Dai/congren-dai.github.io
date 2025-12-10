@@ -1,204 +1,217 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Particle</title>
+    <title>Gesture Particles</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
     <style>
-        /* --- 样式重置与布局 --- */
+        :root {
+            --accent: #ff0055;
+            --bg-panel: rgba(10, 10, 15, 0.75);
+            --border: rgba(255, 255, 255, 0.15);
+        }
         body {
             margin: 0;
             overflow: hidden;
-            background-color: #050505;
-            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #000;
+            font-family: 'Segoe UI', Roboto, sans-serif;
             color: white;
-            user-select: none; /* 防止频繁点击时选中文字 */
+            user-select: none;
         }
         #canvas-container {
-            width: 100vw;
-            height: 100vh;
-            position: absolute;
-            top: 0;
-            left: 0;
-            z-index: 1;
-            outline: none;
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1;
         }
-        
-        /* --- UI 层 --- */
+
+        /* --- UI Overlay --- */
         #ui-layer {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            z-index: 10;
-            pointer-events: none; /* 让鼠标穿透到 Canvas */
-            transition: opacity 0.5s; /* 添加过渡效果 */
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 10;
         }
-        .control-panel {
+
+        /* --- Panels --- */
+        .panel {
             pointer-events: auto;
-            background: rgba(0, 0, 0, 0.6);
-            backdrop-filter: blur(12px);
-            padding: 24px;
+            background: var(--bg-panel);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--border);
             border-radius: 16px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-            max-width: 320px;
-            transition: opacity 0.3s;
-        }
-        h1 {
-            margin: 0 0 8px 0;
-            font-size: 1.4rem;
-            font-weight: 600;
-            background: linear-gradient(90deg, #fff, #aaa);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-        p {
-            font-size: 0.85rem;
-            color: #ccc;
-            margin-bottom: 20px;
-            line-height: 1.5;
-        }
-        .shortcut-hint {
-            font-size: 0.75rem;
-            color: #888;
-            margin-top: 5px;
-            border-top: 1px solid rgba(255,255,255,0.1);
-            padding-top: 8px;
-        }
-        
-        /* --- 按钮样式 --- */
-        .btn {
-            background: linear-gradient(135deg, #6e8efb, #a777e3);
-            border: none;
-            color: white;
-            padding: 10px 20px;
-            border-radius: 30px;
-            cursor: pointer;
-            font-size: 0.9rem;
-            font-weight: 500;
-            transition: transform 0.2s, box-shadow 0.2s;
-            outline: none;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            margin-right: 10px;
-            text-decoration: none;
-        }
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(110, 142, 251, 0.4);
-        }
-        .btn:active {
-            transform: translateY(0);
-        }
-        input[type="file"] { display: none; }
-        
-        #fullscreen-btn {
+            padding: 20px;
+            display: flex; flex-direction: column; gap: 16px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
             position: absolute;
-            bottom: 25px;
-            right: 25px;
-            z-index: 10;
+        }
+
+        .left-panel { top: 20px; left: 20px; width: 260px; }
+        .right-panel { top: 20px; right: 20px; width: 220px; }
+
+        h2 {
+            margin: 0 0 5px 0; font-size: 1.1rem;
+            background: linear-gradient(90deg, #fff, var(--accent));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+
+        .control-item { display: flex; flex-direction: column; gap: 6px; }
+        label { font-size: 0.75rem; color: #aaa; text-transform: uppercase; letter-spacing: 1px; display: flex; justify-content: space-between; }
+        .key-hint { color: var(--accent); font-weight: bold; }
+        .val-display { color: #fff; font-family: monospace; }
+
+        select, input[type="color"] {
+            background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+            color: white; padding: 8px 12px; border-radius: 8px;
+            outline: none; cursor: pointer; font-size: 0.9rem;
+        }
+
+        /* Sliders */
+        input[type=range] {
+            -webkit-appearance: none; width: 100%; background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%;
+            background: var(--accent); cursor: pointer; margin-top: -6px;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%; height: 4px; cursor: pointer; background: rgba(255,255,255,0.2); border-radius: 2px;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #2980b9, #2c3e50);
+            border: 1px solid var(--border);
+            color: white; padding: 10px; border-radius: 8px;
+            cursor: pointer; font-weight: 600; text-align: center;
+        }
+        .btn:hover { background: linear-gradient(135deg, var(--accent), #2980b9); }
+
+        /* --- Camera Preview --- */
+        .cam-box {
             pointer-events: auto;
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255,255,255,0.2);
-            backdrop-filter: blur(5px);
-            transition: opacity 0.5s;
+            position: fixed; bottom: 20px; right: 20px;
+            width: 200px; height: 150px;
+            background: black; border-radius: 12px;
+            overflow: hidden; border: 1px solid var(--border);
+            z-index: 20;
+            box-shadow: 0 0 20px rgba(0,0,0,0.8);
+        }
+        .cam-box video {
+            width: 100%; height: 100%; object-fit: cover;
+            transform: scaleX(-1); opacity: 0.8;
+        }
+        .cam-overlay {
+            position: absolute; bottom: 0; left: 0; width: 100%;
+            background: rgba(0,0,0,0.7); color: #fff;
+            font-size: 0.7rem; padding: 6px; box-sizing: border-box;
+            display: flex; flex-direction: column; gap: 2px;
         }
 
-        /* --- 加载动画 --- */
+        /* --- Fullscreen Logic --- */
+        :fullscreen #ui-layer { opacity: 0; pointer-events: none; }
+        :fullscreen .cam-box { opacity: 0; pointer-events: none; }
+        :fullscreen { cursor: none; }
+        :fullscreen body { cursor: none; }
+
+        /* --- Loader --- */
         #loader {
-            position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: #000;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            z-index: 999;
-            transition: opacity 0.8s ease-out;
+            position: fixed; inset: 0; background: #000; z-index: 100;
+            display: flex; justify-content: center; align-items: center; flex-direction: column;
+            color: white; font-family: monospace; transition: opacity 0.5s;
         }
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid #333;
-            border-top: 4px solid #fff;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin-bottom: 15px;
-        }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-        /* =========================================
-           新增：全屏模式下隐藏所有 UI 元素
-           ========================================= */
-        /* 标准写法 */
-        :fullscreen #ui-layer,
-        :fullscreen #fullscreen-btn,
-        :fullscreen .lil-gui { 
-            display: none !important; 
-        }
-        
-        /* 兼容 Safari / Chrome 旧内核 */
-        :-webkit-full-screen #ui-layer,
-        :-webkit-full-screen #fullscreen-btn,
-        :-webkit-full-screen .lil-gui { 
-            display: none !important; 
-        }
-
-        /* =========================================
-           修改点：全屏模式下隐藏鼠标光标
-           ========================================= */
-        :fullscreen {
-            cursor: none;
-        }
-        
-        :-webkit-full-screen {
-            cursor: none;
-        }
-        
     </style>
     
     <script type="importmap">
-        {
-            "imports": {
-                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-            }
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
         }
+    }
     </script>
 </head>
 <body>
 
     <div id="loader">
-        <div class="spinner"></div>
-        <div style="color: #666; font-size: 0.9rem;">INITIALIZING 3D ENGINE</div>
+        <div>INITIALIZING UNIVERSE...</div>
+        <div style="margin-top:10px; font-size: 0.8rem; color:#666;">Allow Camera Access</div>
     </div>
 
     <div id="ui-layer">
-        <div class="control-panel">
-            <h1>Danny's Particle</h1>
-            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                <label for="music-upload" class="btn">
-                    📂 上传音乐
-                </label>
-                <input type="file" id="music-upload" accept="audio/*">
-                
-                <button id="play-btn" class="btn" style="background: rgba(255,255,255,0.1);">
-                    ⏯ 播放/暂停
-                </button>
-            </div>
+        <div class="panel left-panel">
+            <h2>✨ Danny's Particles</h2>
             
-            <div id="status" style="margin-top:12px; font-size: 0.75rem; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                </div>
+            <div class="control-item">
+                <label>Shape <span class="key-hint">Keys 1-6</span></label>
+                <select id="shape-select">
+                    <option value="heart">1. ❤️ Heart</option>
+                    <option value="flower">2. 🌸 Flower</option>
+                    <option value="saturn">3. 🪐 Saturn</option>
+                    <option value="buddha">4. 🧘 Buddha</option>
+                    <option value="fireworks" selected>5. 🎆 Fireworks</option> <option value="spiral">6. 🌀 Galaxy</option>
+                </select>
+                <label style="font-size:0.65rem; margin-top:2px;">或 Use Left/Right Arrows</label>
+            </div>
 
-            <div class="shortcut-hint">
-                <strong style="color:white">键盘快捷键：</strong><br>
-                [1-8] 切换形状 &nbsp;|&nbsp; [← →] 循环切换 &nbsp;|&nbsp; [Space] 随机
+            <div class="control-item">
+                <label>Color Style</label>
+                <select id="color-mode">
+                    <option value="flow">🌈 Rainbow Flow</option>
+                    <option value="custom">🎨 Custom Color</option>
+                </select>
+            </div>
+
+            <div class="control-item" id="custom-color-box" style="display: none;">
+                <label>Pick Color</label>
+                <input type="color" id="color-picker" value="#ff0055">
+            </div>
+
+            <div class="control-item">
+                <label>Music Response</label>
+                <button class="btn" onclick="document.getElementById('audio-file').click()">📂 Upload MP3</button>
+                <input type="file" id="audio-file" accept="audio/*" style="display: none;">
+            </div>
+
+            <button class="btn" id="fs-btn" style="margin-top: 10px;">⛶ Fullscreen</button>
+        </div>
+
+        <div class="panel right-panel">
+            <h2>🎛️ Tuner</h2>
+            
+            <div class="control-item">
+                <label>Size <span id="val-size" class="val-display">0.15</span></label>
+                <input type="range" id="param-size" min="0.01" max="0.5" step="0.01" value="0.15">
+            </div>
+
+            <div class="control-item">
+                <label>Speed <span id="val-speed" class="val-display">0.08</span></label>
+                <input type="range" id="param-speed" min="0.01" max="0.4" step="0.01" value="0.08">
+            </div>
+
+            <div class="control-item">
+                <label>Bloom <span id="val-bloom" class="val-display">1.5</span></label>
+                <input type="range" id="param-bloom" min="0" max="3.0" step="0.1" value="1.5">
+            </div>
+
+            <div class="control-item">
+                <label>Noise <span id="val-noise" class="val-display">0.0</span></label>
+                <input type="range" id="param-noise" min="0" max="1.0" step="0.01" value="0.0">
             </div>
         </div>
     </div>
 
-    <button id="fullscreen-btn" class="btn">⛶ 全屏模式</button>
+    <div class="cam-box">
+        <video id="webcam" playsinline></video>
+        <div class="cam-overlay">
+            <span id="gesture-name">Initializing...</span>
+            <div style="display:flex; justify-content:space-between; margin-top:2px;">
+                <span id="spin-status" style="color:var(--accent);">H-Speed: 0</span>
+                <span id="v-spin-status" style="color:#00f2ff;">V-Speed: 0</span>
+            </div>
+        </div>
+    </div>
+
     <div id="canvas-container"></div>
 
     <script type="module">
@@ -207,479 +220,468 @@
         import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
         import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
         import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-        import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 
-        // --- 全局变量声明 ---
-        let scene, camera, renderer, composer, controls;
-        let particles, geometry, material;
-        let positions, colors, targetPositions; // BufferArrays
-        let audio, analyser, dataArray;
-        let isAudioPlaying = false;
-        let clock = new THREE.Clock();
-        
-        // 交互变量
-        let mouse = new THREE.Vector2();
-        let mousePressed = false;
-        let shapeController; // 保存GUI控制器引用，用于键盘同步
-
-        // 核心配置参数
-        const params = {
-            count: 25000,           // 粒子数量
-            size: 0.15,             // 基础大小
-            shape: 'tetrahedron',   // 初始形状
-            autoRotateSpeed: 0.3,   // 自动旋转速度
-            bloomStrength: 1.2,     // 辉光强度
-            bloomRadius: 0.5,       // 辉光半径
-            bloomThreshold: 0.1,    // 辉光阈值
-            colorSpeed: 1.5,        // 色彩流动速度
-            flowSpeed: 0.08,        // 变形/流动速度
-            brightness: 1.0,        // 基础亮度
-            audioSensitivity: 1.2,  // 音频响应倍率
-            dispersion: 0.5         // 粒子松散度
+        // --- Configuration & State ---
+        const config = {
+            mainCount: 35000,    
+            bgCount: 10000,      
+            particleSize: 0.15,
+            flowSpeed: 0.08,
+            bloomStrength: 1.5,
+            manualNoise: 0.0
         };
 
-        // 形状列表（用于键盘循环）
-        const shapeList = [
-            'tetrahedron', 'butterfly', 'spiral', 'lemniscate', 
-            'rose', 'helix', 'sphere', 'cube'
-        ];
+        const state = {
+            targetShape: 'fireworks', // DEFAULT CHANGED HERE
+            colorMode: 'flow',
+            customColor: new THREE.Color('#ff0055'),
+            
+            // Interaction State
+            handDetected: false,
+            gestureScale: 1.0,
+            
+            // Rotation Physics
+            rotationMomentumX: 0.002, 
+            rotationMomentumY: 0.000, 
+            prevHandX: null,
+            prevHandY: null,
+        };
+
+        const shapeList = ['heart', 'flower', 'saturn', 'buddha', 'fireworks', 'spiral'];
+
+        // --- Three.js Globals ---
+        let scene, camera, renderer, composer, controls, bloomPass;
+        let particles, geometry, material; 
+        let bgParticles, bgGeometry, bgMaterial; 
+        let positions, colors, targetPositions;
+        let clock = new THREE.Clock();
+        
+        // --- Audio Globals ---
+        let audio, analyser;
+        let isPlaying = false;
 
         init();
-        animate();
 
         function init() {
-            // 1. 初始化场景与相机
+            initScene();
+            initParticles();     
+            initBackground();    
+            setupUI();
+            setupKeyboard(); 
+            animate();
+            startHandTracking();
+        }
+
+        function initScene() {
             const container = document.getElementById('canvas-container');
+            
             scene = new THREE.Scene();
-            // 深邃的背景雾
-            scene.fog = new THREE.FogExp2(0x000000, 0.025);
+            scene.fog = new THREE.FogExp2(0x000000, 0.02);
 
-            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(0, 10, 35);
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 0, 40);
 
-            // 2. 渲染器设置
-            renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" }); // 关闭AA交给后期处理，提升性能
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // 限制DPR优化性能
+            renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.toneMapping = THREE.ReinhardToneMapping;
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             container.appendChild(renderer.domElement);
 
-            // 3. 轨道控制器
-            controls = new OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true;
-            controls.dampingFactor = 0.05;
-            controls.autoRotate = true;
-            controls.autoRotateSpeed = params.autoRotateSpeed;
-            controls.enablePan = false;
-
-            // 4. 粒子系统构建
-            initParticles();
-
-            // 5. 后期处理 (Bloom 辉光)
             const renderScene = new RenderPass(scene, camera);
-            const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-            bloomPass.threshold = params.bloomThreshold;
-            bloomPass.strength = params.bloomStrength;
-            bloomPass.radius = params.bloomRadius;
+            bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+            bloomPass.threshold = 0.1;
+            bloomPass.strength = config.bloomStrength;
+            bloomPass.radius = 0.5;
 
             composer = new EffectComposer(renderer);
             composer.addPass(renderScene);
             composer.addPass(bloomPass);
 
-            // 6. 音频初始化
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.enablePan = false;
+            controls.autoRotate = false; 
+
             const listener = new THREE.AudioListener();
             camera.add(listener);
             audio = new THREE.Audio(listener);
-            analyser = new THREE.AudioAnalyser(audio, 128); 
+            analyser = new THREE.AudioAnalyser(audio, 128);
 
-            // 7. 事件与UI
-            setupGUI(bloomPass);
-            setupEvents();
-            
-            // 初始形状计算
-            setTetrahedronTarget();
-
-            // 移除 Loading
-            const loader = document.getElementById('loader');
-            loader.style.opacity = 0;
-            setTimeout(() => loader.remove(), 800);
-        }
-
-        // --- 粒子系统核心 ---
-        function initParticles() {
-            geometry = new THREE.BufferGeometry();
-            positions = new Float32Array(params.count * 3);
-            colors = new Float32Array(params.count * 3);
-            targetPositions = new Float32Array(params.count * 3);
-
-            const colorObj = new THREE.Color();
-
-            for (let i = 0; i < params.count; i++) {
-                // 初始化位置 (随机云)
-                positions[i * 3] = (Math.random() - 0.5) * 100;
-                positions[i * 3 + 1] = (Math.random() - 0.5) * 100;
-                positions[i * 3 + 2] = (Math.random() - 0.5) * 100;
-
-                // 初始化目标位置
-                targetPositions[i * 3] = positions[i * 3];
-                targetPositions[i * 3 + 1] = positions[i * 3 + 1];
-                targetPositions[i * 3 + 2] = positions[i * 3 + 2];
-
-                // 初始化颜色
-                colorObj.setHSL(Math.random(), 0.8, 0.5);
-                colors[i * 3] = colorObj.r;
-                colors[i * 3 + 1] = colorObj.g;
-                colors[i * 3 + 2] = colorObj.b;
-            }
-
-            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-            // 粒子材质
-            material = new THREE.PointsMaterial({
-                size: params.size,
-                vertexColors: true,
-                blending: THREE.AdditiveBlending,
-                depthWrite: false, // 关键：关闭深度写入以获得透明叠加效果
-                transparent: true,
-                opacity: 0.8,
-                map: createParticleTexture() // 自定义圆形辉光纹理
-            });
-
-            particles = new THREE.Points(geometry, material);
-            scene.add(particles);
-        }
-
-        // 动态生成圆形纹理
-        function createParticleTexture() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 64; canvas.height = 64;
-            const ctx = canvas.getContext('2d');
-            const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-            gradient.addColorStop(0, 'rgba(255,255,255,1)');
-            gradient.addColorStop(0.3, 'rgba(255,255,255,0.5)');
-            gradient.addColorStop(0.6, 'rgba(255,255,255,0.1)');
-            gradient.addColorStop(1, 'rgba(0,0,0,0)');
-            ctx.fillStyle = gradient;
-            ctx.fillRect(0,0,64,64);
-            const texture = new THREE.Texture(canvas);
-            texture.needsUpdate = true;
-            return texture;
-        }
-
-        // --- 几何变形逻辑 (数学核心) ---
-        function morphTo(shape) {
-            const count = params.count;
-            
-            for (let i = 0; i < count; i++) {
-                const i3 = i * 3;
-                let x, y, z;
-                
-                // 归一化索引，用于参数方程
-                const u = Math.random() * Math.PI * 2;
-                const v = Math.random() * Math.PI;
-
-                switch (shape) {
-                    case 'tetrahedron': 
-                        x = (Math.random()-0.5)*20; y=x; z=x; 
-                        break;
-
-                    case 'cube':
-                        x = (Math.random() - 0.5) * 24;
-                        y = (Math.random() - 0.5) * 24;
-                        z = (Math.random() - 0.5) * 24;
-                        break;
-
-                    case 'sphere':
-                        const rS = 14;
-                        x = rS * Math.sin(v) * Math.cos(u);
-                        y = rS * Math.sin(v) * Math.sin(u);
-                        z = rS * Math.cos(v);
-                        break;
-
-                    case 'butterfly': // 蝴蝶曲线
-                         const tB = (i / count) * 12 * Math.PI; // 更多圈数
-                         const term1 = Math.exp(Math.cos(tB));
-                         const term2 = 2 * Math.cos(4 * tB);
-                         const term3 = Math.pow(Math.sin(tB / 12), 5);
-                         const rB = 4 * (term1 - term2 - term3);
-                         x = rB * Math.sin(tB) * 1.2;
-                         y = rB * Math.cos(tB) * 1.2;
-                         z = (Math.random() - 0.5) * 8; // Z轴随机厚度
-                         break;
-                    
-                    case 'spiral': // 阿基米德/对数螺旋
-                        const tS = i * 0.08;
-                        const rSpiral = 0.4 * tS;
-                        x = rSpiral * Math.cos(tS);
-                        z = rSpiral * Math.sin(tS);
-                        y = ((i / count) - 0.5) * 30; // 锥形上升
-                        break;
-
-                    case 'lemniscate': // 伯努利双扭线 (∞符号)
-                        const tL = (i / count) * 2 * Math.PI;
-                        const scaleL = 18;
-                        const denom = 1 + Math.sin(tL)*Math.sin(tL);
-                        x = scaleL * Math.cos(tL) / denom;
-                        y = scaleL * Math.sin(tL) * Math.cos(tL) / denom;
-                        z = (Math.random() - 0.5) * 4; 
-                        break;
-                    
-                    case 'rose': // 玫瑰曲线
-                        const k = 6; // 花瓣数
-                        const tR = (i / count) * Math.PI * 2 * 3; 
-                        const rR = 15 * Math.cos(k * tR);
-                        x = rR * Math.cos(tR);
-                        y = rR * Math.sin(tR);
-                        z = (Math.random() - 0.5) * 6;
-                        break;
-
-                    case 'helix': // DNA 双螺旋
-                        const tH = i * 0.05;
-                        const radiusH = 8;
-                        // 双股
-                        const offset = i % 2 === 0 ? 0 : Math.PI; 
-                        x = radiusH * Math.cos(tH + offset);
-                        z = radiusH * Math.sin(tH + offset);
-                        y = (i / count * 50) - 25;
-                        break;
-                    
-                    default: 
-                         x = 0; y = 0; z = 0;
-                }
-
-                const noise = 0.5;
-                targetPositions[i3] = x + (Math.random()-0.5)*noise;
-                targetPositions[i3 + 1] = y + (Math.random()-0.5)*noise;
-                targetPositions[i3 + 2] = z + (Math.random()-0.5)*noise;
-            }
-        }
-
-        // 专门处理三棱锥
-        function setTetrahedronTarget() {
-             const r = 14;
-             // 四个顶点
-             const p1 = {x: r, y: r, z: r};
-             const p2 = {x: -r, y: -r, z: r};
-             const p3 = {x: -r, y: r, z: -r};
-             const p4 = {x: r, y: -r, z: -r};
-             const points = [p1, p2, p3, p4];
-
-             for(let i=0; i<params.count; i++) {
-                 // 在四面体内部或表面随机插值
-                 const a = points[Math.floor(Math.random()*4)];
-                 const b = points[Math.floor(Math.random()*4)];
-                 const percent = Math.random();
-                 
-                 targetPositions[i*3] = a.x + (b.x - a.x) * percent;
-                 targetPositions[i*3+1] = a.y + (b.y - a.y) * percent;
-                 targetPositions[i*3+2] = a.z + (b.z - a.z) * percent;
-             }
-        }
-
-        // --- 动画循环 ---
-        function animate() {
-            requestAnimationFrame(animate);
-
-            const time = clock.getElapsedTime();
-            
-            // 1. 获取音频数据
-            let audioAvg = 0;
-            let audioHigh = 0;
-            if (isAudioPlaying && analyser) {
-                analyser.getFrequencyData(); // update data
-                dataArray = analyser.data;   // internal array
-                audioAvg = analyser.getAverageFrequency();
-                // 获取高频部分用于闪烁
-                audioHigh = dataArray[100] || 0; 
-            }
-
-            const audioFactor = audioAvg / 256; // 0.0 - 1.0
-
-            // 2. 更新控制器
-            controls.autoRotateSpeed = params.autoRotateSpeed + (audioFactor * 2);
-            controls.update();
-
-            // 3. 更新粒子
-            const positionsArr = geometry.attributes.position.array;
-            const colorsArr = geometry.attributes.color.array;
-
-            // 基础流速 + 音乐加速
-            const currentSpeed = params.flowSpeed * (1 + audioFactor * 2);
-            // 颜色循环
-            const timeHue = time * params.colorSpeed * 0.1;
-
-            for (let i = 0; i < params.count; i++) {
-                const i3 = i * 3;
-
-                // --- 位置插值 (Lerp) ---
-                positionsArr[i3]     += (targetPositions[i3]     - positionsArr[i3])     * currentSpeed;
-                positionsArr[i3 + 1] += (targetPositions[i3 + 1] - positionsArr[i3 + 1]) * currentSpeed;
-                positionsArr[i3 + 2] += (targetPositions[i3 + 2] - positionsArr[i3 + 2]) * currentSpeed;
-
-                // --- 音乐震动 (Noise) ---
-                if (audioFactor > 0.01) {
-                    const vibration = audioFactor * params.audioSensitivity * 0.5;
-                    positionsArr[i3]     += (Math.random() - 0.5) * vibration;
-                    positionsArr[i3 + 1] += (Math.random() - 0.5) * vibration;
-                    positionsArr[i3 + 2] += (Math.random() - 0.5) * vibration;
-                }
-
-                // --- 鼠标排斥 ---
-                if (mousePressed) {
-                    positionsArr[i3] *= 1.02; 
-                    positionsArr[i3+1] *= 1.02;
-                    positionsArr[i3+2] *= 1.02;
-                }
-
-                // --- 颜色更新 ---
-                const mixFactor = (positionsArr[i3] + positionsArr[i3+1]) * 0.02;
-                const hue = (timeHue + mixFactor) % 1; 
-                const lightness = 0.5 + (audioHigh/256) * 0.3 * params.brightness;
-                
-                const color = new THREE.Color();
-                color.setHSL(hue, 0.85, lightness);
-                
-                colorsArr[i3] = color.r;
-                colorsArr[i3+1] = color.g;
-                colorsArr[i3+2] = color.b;
-            }
-
-            geometry.attributes.position.needsUpdate = true;
-            geometry.attributes.color.needsUpdate = true;
-            
-            // 粒子整体呼吸
-            material.size = params.size * (1 + audioFactor * 0.5);
-
-            composer.render();
-        }
-
-        // --- 辅助函数：GUI 与 事件 ---
-
-        function setupGUI(bloomPass) {
-            const gui = new GUI({ title: '控制台' });
-            gui.domElement.style.marginTop = "20px"; // 避开自定义UI
-
-            const shapes = {};
-            shapeList.forEach(s => shapes[s.charAt(0).toUpperCase() + s.slice(1)] = s);
-            
-            // 保存控制器引用，供键盘事件调用
-            shapeController = gui.add(params, 'shape', shapes)
-                .name('几何模型')
-                .onChange((val) => {
-                    if(val === 'tetrahedron') setTetrahedronTarget();
-                    else morphTo(val);
-                    params.colorSpeed = Math.random() * 3 + 0.5;
-                });
-
-            const fVis = gui.addFolder('视觉参数');
-            fVis.add(params, 'size', 0.01, 0.5).name('粒子大小');
-            fVis.add(params, 'flowSpeed', 0.01, 0.3).name('聚合速度');
-            fVis.add(params, 'colorSpeed', 0, 5).name('色相流速');
-            fVis.add(params, 'bloomStrength', 0, 3).name('辉光强度').onChange(v => bloomPass.strength = v);
-            fVis.add(params, 'bloomRadius', 0, 1).name('辉光半径').onChange(v => bloomPass.radius = v);
-            
-            const fAudio = gui.addFolder('音频响应');
-            fAudio.add(params, 'audioSensitivity', 0, 3).name('跳动幅度');
-            fAudio.add(params, 'brightness', 0, 2).name('亮度增益');
-
-            if (window.innerWidth < 600) gui.close();
-        }
-
-        function setupEvents() {
             window.addEventListener('resize', () => {
                 camera.aspect = window.innerWidth / window.innerHeight;
                 camera.updateProjectionMatrix();
                 renderer.setSize(window.innerWidth, window.innerHeight);
                 composer.setSize(window.innerWidth, window.innerHeight);
             });
+        }
 
-            document.addEventListener('mousedown', () => mousePressed = true);
-            document.addEventListener('mouseup', () => mousePressed = false);
+        function initParticles() {
+            geometry = new THREE.BufferGeometry();
+            positions = new Float32Array(config.mainCount * 3);
+            colors = new Float32Array(config.mainCount * 3);
+            targetPositions = new Float32Array(config.mainCount * 3);
 
-            const fileInput = document.getElementById('music-upload');
-            const statusDiv = document.getElementById('status');
-            const playBtn = document.getElementById('play-btn');
+            for (let i = 0; i < config.mainCount; i++) {
+                positions[i*3] = (Math.random()-0.5) * 50;
+                positions[i*3+1] = (Math.random()-0.5) * 50;
+                positions[i*3+2] = (Math.random()-0.5) * 50;
+                colors[i*3] = 1; colors[i*3+1] = 1; colors[i*3+2] = 1;
+            }
 
-            fileInput.addEventListener('change', (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                
-                statusDiv.innerText = "正在解码: " + file.name;
-                statusDiv.style.color = "#ffff00";
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
-                const reader = new FileReader();
-                reader.onload = function(ev) {
-                    const ctx = audio.context;
-                    ctx.decodeAudioData(ev.target.result, (buffer) => {
-                        audio.setBuffer(buffer);
-                        audio.setLoop(true);
-                        audio.setVolume(0.5);
-                        audio.play();
-                        isAudioPlaying = true;
-                        statusDiv.innerText = "♪ 正在播放: " + file.name;
-                        statusDiv.style.color = "#00ff00";
-                    }, (err) => {
-                        statusDiv.innerText = "解码失败，请换个文件试试";
-                        statusDiv.style.color = "red";
-                    });
-                };
-                reader.readAsArrayBuffer(file);
+            const sprite = new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/disc.png');
+
+            material = new THREE.PointsMaterial({
+                size: config.particleSize,
+                map: sprite,
+                vertexColors: true,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                transparent: true,
+                opacity: 0.8
             });
 
-            playBtn.addEventListener('click', () => {
-                if (audio.buffer) {
-                    if (audio.isPlaying) {
-                        audio.pause();
-                        isAudioPlaying = false;
-                        playBtn.innerText = "▶ 继续播放";
-                    } else {
-                        audio.play();
-                        isAudioPlaying = true;
-                        playBtn.innerText = "⏸ 暂停";
-                    }
+            particles = new THREE.Points(geometry, material);
+            scene.add(particles);
+
+            calculateTargetShape(state.targetShape);
+        }
+
+        function initBackground() {
+            bgGeometry = new THREE.BufferGeometry();
+            const bgPos = new Float32Array(config.bgCount * 3);
+            const bgCol = new Float32Array(config.bgCount * 3);
+
+            for(let i=0; i<config.bgCount; i++) {
+                const r = 50 + Math.random() * 100;
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos((Math.random() * 2) - 1);
+
+                bgPos[i*3] = r * Math.sin(phi) * Math.cos(theta);
+                bgPos[i*3+1] = r * Math.sin(phi) * Math.sin(theta);
+                bgPos[i*3+2] = r * Math.cos(phi);
+
+                const c = new THREE.Color();
+                c.setHSL(Math.random(), 0.6, 0.3 + Math.random()*0.3);
+                bgCol[i*3] = c.r; 
+                bgCol[i*3+1] = c.g; 
+                bgCol[i*3+2] = c.b;
+            }
+
+            bgGeometry.setAttribute('position', new THREE.BufferAttribute(bgPos, 3));
+            bgGeometry.setAttribute('color', new THREE.BufferAttribute(bgCol, 3));
+
+            const starSprite = new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/spark1.png');
+
+            bgMaterial = new THREE.PointsMaterial({
+                size: 0.3, 
+                map: starSprite,
+                vertexColors: true,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                transparent: true,
+                opacity: 0.4
+            });
+
+            bgParticles = new THREE.Points(bgGeometry, bgMaterial);
+            scene.add(bgParticles);
+        }
+
+        function calculateTargetShape(shapeType) {
+            const count = config.mainCount;
+            for (let i = 0; i < count; i++) {
+                const i3 = i * 3;
+                let x=0, y=0, z=0;
+                const u = Math.random() * Math.PI * 2;
+                const v = Math.random() * Math.PI;
+                const p = i / count;
+
+                switch(shapeType) {
+                    case 'heart':
+                        const tH = p * Math.PI * 2 * 12; 
+                        x = 16 * Math.pow(Math.sin(tH), 3);
+                        y = 13 * Math.cos(tH) - 5*Math.cos(2*tH) - 2*Math.cos(3*tH) - Math.cos(4*tH);
+                        z = (Math.random()-0.5) * 6;
+                        x*=0.8; y*=0.8;
+                        break;
+                    case 'flower':
+                        const k = 5;
+                        const rF = 14 * Math.cos(k * u) + 4;
+                        x = rF * Math.sin(v) * Math.cos(u);
+                        y = rF * Math.sin(v) * Math.sin(u);
+                        z = rF * Math.cos(v) * 0.6;
+                        break;
+                    case 'saturn':
+                        if (i < count * 0.35) {
+                            x = 8 * Math.sin(v) * Math.cos(u);
+                            y = 8 * Math.sin(v) * Math.sin(u);
+                            z = 8 * Math.cos(v);
+                        } else {
+                            const ang = p * Math.PI * 2 * 20;
+                            const rad = 11 + Math.random() * 9;
+                            x = rad * Math.cos(ang);
+                            z = rad * Math.sin(ang);
+                            y = (Math.random()-0.5);
+                            const tilt = 0.4;
+                            const ty = y * Math.cos(tilt) - z * Math.sin(tilt);
+                            const tz = y * Math.sin(tilt) + z * Math.cos(tilt);
+                            y = ty; z = tz;
+                        }
+                        break;
+                    case 'buddha':
+                        if (i < count * 0.45) { 
+                            x = 7 * Math.sin(v) * Math.cos(u);
+                            y = 7 * Math.sin(v) * Math.sin(u) - 3;
+                            z = 7 * Math.cos(v);
+                        } else if (i < count * 0.65) { 
+                            x = 3.5 * Math.sin(v) * Math.cos(u);
+                            y = 3.5 * Math.sin(v) * Math.sin(u) + 6;
+                            z = 3.5 * Math.cos(v);
+                        } else { 
+                            const ang = p * Math.PI * 2 * 10;
+                            const rL = 10 + Math.random()*2;
+                            x = rL * Math.cos(ang);
+                            z = rL * Math.sin(ang) * 0.6;
+                            y = -9;
+                        }
+                        break;
+                    case 'fireworks':
+                        const rFire = Math.pow(Math.random(), 0.3) * 28;
+                        x = rFire * Math.sin(v) * Math.cos(u);
+                        y = rFire * Math.sin(v) * Math.sin(u);
+                        z = rFire * Math.cos(v);
+                        break;
+                    case 'spiral':
+                        const tS = i * 0.05;
+                        const rS = tS * 0.4;
+                        x = rS * Math.cos(tS);
+                        z = rS * Math.sin(tS);
+                        y = (Math.random()-0.5) * 6;
+                        break;
+                }
+                targetPositions[i3] = x;
+                targetPositions[i3+1] = y;
+                targetPositions[i3+2] = z;
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = clock.getElapsedTime();
+            
+            let audioAvg = 0;
+            if (isPlaying) {
+                analyser.getFrequencyData();
+                audioAvg = analyser.getAverageFrequency() / 255;
+            }
+
+            // Apply updates from Tuner
+            material.size = config.particleSize;
+            bloomPass.strength = config.bloomStrength;
+
+            particles.rotation.y += state.rotationMomentumX;
+            bgParticles.rotation.y += state.rotationMomentumX * 0.3;
+            
+            particles.rotation.x += state.rotationMomentumY;
+            bgParticles.rotation.x += state.rotationMomentumY * 0.3;
+
+            state.rotationMomentumX *= 0.96; 
+            if (Math.abs(state.rotationMomentumX) < 0.002) state.rotationMomentumX = 0.002 * Math.sign(state.rotationMomentumX || 1);
+
+            state.rotationMomentumY *= 0.96;
+            if (Math.abs(state.rotationMomentumY) < 0.0005) state.rotationMomentumY = 0;
+
+            document.getElementById('spin-status').innerText = `H-Spd: ${(state.rotationMomentumX*100).toFixed(0)}`;
+            document.getElementById('v-spin-status').innerText = `V-Spd: ${(state.rotationMomentumY*100).toFixed(0)}`;
+
+            const pos = geometry.attributes.position.array;
+            const col = geometry.attributes.color.array;
+            
+            let currentScale = state.handDetected ? state.gestureScale : 1.0 + Math.sin(time*1.5)*0.1;
+            currentScale += audioAvg * 0.5;
+
+            const speed = config.flowSpeed * (1 + audioAvg);
+            const noise = (audioAvg * 0.8) + parseFloat(config.manualNoise); 
+
+            for(let i=0; i < config.mainCount; i++) {
+                const i3 = i*3;
+                const tx = targetPositions[i3] * currentScale;
+                const ty = targetPositions[i3+1] * currentScale;
+                const tz = targetPositions[i3+2] * currentScale;
+
+                pos[i3] += (tx - pos[i3]) * speed;
+                pos[i3+1] += (ty - pos[i3+1]) * speed;
+                pos[i3+2] += (tz - pos[i3+2]) * speed;
+
+                if(noise > 0.01) {
+                    pos[i3] += (Math.random()-0.5) * noise;
+                    pos[i3+1] += (Math.random()-0.5) * noise;
+                    pos[i3+2] += (Math.random()-0.5) * noise;
+                }
+
+                if (state.colorMode === 'flow') {
+                    const hue = (time * 0.1 + (pos[i3]*0.015)) % 1;
+                    const c = new THREE.Color().setHSL(hue, 0.8, 0.6);
+                    col[i3] = c.r; col[i3+1] = c.g; col[i3+2] = c.b;
                 } else {
-                    alert("请先上传音频文件");
+                    col[i3] = state.customColor.r;
+                    col[i3+1] = state.customColor.g;
+                    col[i3+2] = state.customColor.b;
+                }
+            }
+
+            if (audioAvg > 0.1 || Math.random() > 0.9) {
+                bgMaterial.size = 0.3 + audioAvg * 0.5;
+            }
+
+            geometry.attributes.position.needsUpdate = true;
+            geometry.attributes.color.needsUpdate = true;
+            
+            controls.update();
+            composer.render();
+        }
+
+        // --- HAND TRACKING ---
+        function startHandTracking() {
+            const video = document.getElementById('webcam');
+            const gestureLabel = document.getElementById('gesture-name');
+
+            const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+            
+            hands.setOptions({
+                maxNumHands: 1,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.6,
+                minTrackingConfidence: 0.6
+            });
+
+            hands.onResults((results) => {
+                if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                    state.handDetected = true;
+                    const hand = results.multiHandLandmarks[0];
+                    processHand(hand, gestureLabel);
+                } else {
+                    state.handDetected = false;
+                    state.prevHandX = null;
+                    state.prevHandY = null;
+                    gestureLabel.innerText = "No Hand";
+                    gestureLabel.style.color = "#888";
+                    state.gestureScale = THREE.MathUtils.lerp(state.gestureScale, 1.0, 0.05);
                 }
             });
 
-            // 全屏逻辑
-            document.getElementById('fullscreen-btn').addEventListener('click', () => {
-                if (!document.fullscreenElement) document.body.requestFullscreen();
-                else document.exitFullscreen();
+            const camera = new Camera(video, {
+                onFrame: async () => { await hands.send({image: video}); },
+                width: 320, height: 240
+            });
+            camera.start().then(() => {
+                document.getElementById('loader').style.opacity = 0;
+                setTimeout(()=>document.getElementById('loader').remove(),500);
+            });
+        }
+
+        function processHand(landmarks, labelElem) {
+            const dist = (i1, i2) => Math.hypot(landmarks[i1].x - landmarks[i2].x, landmarks[i1].y - landmarks[i2].y);
+            const fingerTips = [4, 8, 12, 16, 20];
+            const fingerPips = [2, 6, 10, 14, 18];
+            const extended = fingerTips.map((tip, i) => dist(tip, 0) > dist(fingerPips[i], 0));
+
+            let targetScale = state.gestureScale;
+            let gesture = "Tracking...";
+            let color = "#fff";
+
+            if (extended.every(v => v === false)) {
+                targetScale = 0.2; gesture = "✊ FIST (Implode)"; color = "#ff4444";
+            } else if (extended.every(v => v === true)) {
+                targetScale = 1.8; gesture = "✋ PALM (Explode)"; color = "#00ff00";
+            } else if (extended[0] && extended[1] && !extended[2]) {
+                targetScale = Math.max(0.1, dist(4, 8) * 6); gesture = "👌 PINCH (Size)"; color = "#00f2ff";
+            } else {
+                targetScale = THREE.MathUtils.lerp(state.gestureScale, 1.0, 0.05);
+            }
+            state.gestureScale = THREE.MathUtils.lerp(state.gestureScale, targetScale, 0.1);
+            labelElem.innerText = gesture;
+            labelElem.style.color = color;
+
+            const currentX = landmarks[9].x;
+            const currentY = landmarks[9].y;
+
+            if (state.prevHandX !== null) {
+                const deltaX = currentX - state.prevHandX;
+                if (Math.abs(deltaX) > 0.005) {
+                    state.rotationMomentumX += deltaX * -0.5; 
+                }
+            }
+
+            if (state.prevHandY !== null) {
+                const deltaY = currentY - state.prevHandY;
+                if (Math.abs(deltaY) > 0.005) {
+                    state.rotationMomentumY += deltaY * -0.5; 
+                }
+            }
+
+            state.prevHandX = currentX;
+            state.prevHandY = currentY;
+        }
+
+        // --- KEYBOARD & UI ---
+        function changeShape(shape) {
+            state.targetShape = shape;
+            calculateTargetShape(state.targetShape);
+            document.getElementById('shape-select').value = shape;
+        }
+
+        function setupKeyboard() {
+            window.addEventListener('keydown', (e) => {
+                const keyMap = { '1': 'heart', '2': 'flower', '3': 'saturn', '4': 'buddha', '5': 'fireworks', '6': 'spiral' };
+                if(keyMap[e.key]) changeShape(keyMap[e.key]);
+
+                if (e.key === 'ArrowRight') {
+                    const idx = shapeList.indexOf(state.targetShape);
+                    changeShape(shapeList[(idx + 1) % shapeList.length]);
+                }
+                if (e.key === 'ArrowLeft') {
+                    const idx = shapeList.indexOf(state.targetShape);
+                    changeShape(shapeList[(idx - 1 + shapeList.length) % shapeList.length]);
+                }
+            });
+        }
+
+        function setupUI() {
+            // Main Left Panel
+            document.getElementById('shape-select').value = state.targetShape; // Ensure Dropdown Matches State
+            document.getElementById('shape-select').addEventListener('change', (e) => changeShape(e.target.value));
+            document.getElementById('color-mode').addEventListener('change', (e) => {
+                state.colorMode = e.target.value;
+                document.getElementById('custom-color-box').style.display = (e.target.value==='custom')?'flex':'none';
+            });
+            document.getElementById('color-picker').addEventListener('input', (e) => state.customColor.set(e.target.value));
+            document.getElementById('audio-file').addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if(!file) return;
+                const r = new FileReader();
+                r.onload = (ev) => audio.context.decodeAudioData(ev.target.result, (b) => {
+                    audio.setBuffer(b); audio.setLoop(true); audio.setVolume(0.5); audio.play(); isPlaying=true;
+                });
+                r.readAsArrayBuffer(file);
+            });
+            document.getElementById('fs-btn').addEventListener('click', ()=> {
+                !document.fullscreenElement ? document.documentElement.requestFullscreen() : document.exitFullscreen();
             });
 
-            // 键盘控制
-            window.addEventListener('keydown', (event) => {
-                let newShape = null;
-                const key = event.key;
-                const code = event.code;
+            // Tuner Right Panel Logic
+            const bindTuner = (id, param, displayId) => {
+                document.getElementById(id).addEventListener('input', (e) => {
+                    config[param] = parseFloat(e.target.value);
+                    document.getElementById(displayId).innerText = e.target.value;
+                });
+            };
 
-                if (key >= '1' && key <= '8') {
-                    const idx = parseInt(key) - 1;
-                    if (idx < shapeList.length) newShape = shapeList[idx];
-                }
-                
-                const currentIdx = shapeList.indexOf(params.shape);
-                if (code === 'ArrowRight' || code === 'ArrowUp') {
-                    const next = (currentIdx + 1) % shapeList.length;
-                    newShape = shapeList[next];
-                } else if (code === 'ArrowLeft' || code === 'ArrowDown') {
-                    const prev = (currentIdx - 1 + shapeList.length) % shapeList.length;
-                    newShape = shapeList[prev];
-                }
-                
-                if (code === 'Space') {
-                    let rand;
-                    do { rand = Math.floor(Math.random() * shapeList.length); }
-                    while (shapeList[rand] === params.shape);
-                    newShape = shapeList[rand];
-                }
-
-                if (newShape && shapeController) {
-                    shapeController.setValue(newShape);
-                }
-            });
+            bindTuner('param-size', 'particleSize', 'val-size');
+            bindTuner('param-speed', 'flowSpeed', 'val-speed');
+            bindTuner('param-bloom', 'bloomStrength', 'val-bloom');
+            bindTuner('param-noise', 'manualNoise', 'val-noise');
         }
     </script>
 </body>
