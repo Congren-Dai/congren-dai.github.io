@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gesture Particles</title>
+    <title>Living Pottery - Decoupled Sensitivity</title>
     
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
@@ -12,14 +12,19 @@
 
     <style>
         :root {
-            --accent: #ff0055;
-            --bg-panel: rgba(10, 10, 15, 0.75);
-            --border: rgba(255, 255, 255, 0.15);
+            --accent: #ffaa00; 
+            --bg-panel: rgba(15, 12, 10, 0.85);
+            --border: rgba(255, 180, 100, 0.2);
+            --mode-std: #ffaa00;
+            --mode-od: #ff0055;
+            --col-single: #ffcc00;
+            --col-multi: #00ffaa;
+            --col-flow: #aa00ff;
         }
         body {
             margin: 0;
             overflow: hidden;
-            background-color: #000;
+            background-color: #020202; 
             font-family: 'Segoe UI', Roboto, sans-serif;
             color: white;
             user-select: none;
@@ -34,7 +39,6 @@
             pointer-events: none; z-index: 10;
         }
 
-        /* --- Panels --- */
         .panel {
             pointer-events: auto;
             background: var(--bg-panel);
@@ -43,12 +47,11 @@
             border-radius: 16px;
             padding: 20px;
             display: flex; flex-direction: column; gap: 16px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.6);
             position: absolute;
         }
 
-        .left-panel { top: 20px; left: 20px; width: 260px; }
-        .right-panel { top: 20px; right: 20px; width: 220px; }
+        .left-panel { top: 20px; left: 20px; width: 280px; }
 
         h2 {
             margin: 0 0 5px 0; font-size: 1.1rem;
@@ -58,36 +61,43 @@
 
         .control-item { display: flex; flex-direction: column; gap: 6px; }
         label { font-size: 0.75rem; color: #aaa; text-transform: uppercase; letter-spacing: 1px; display: flex; justify-content: space-between; }
-        .key-hint { color: var(--accent); font-weight: bold; }
         .val-display { color: #fff; font-family: monospace; }
-
-        select, input[type="color"] {
-            background: rgba(255,255,255,0.05); border: 1px solid var(--border);
-            color: white; padding: 8px 12px; border-radius: 8px;
-            outline: none; cursor: pointer; font-size: 0.9rem;
+        .key-hint { 
+            color: var(--accent); 
+            font-weight: bold; 
+            margin-left: 2px; 
+            background: rgba(255,255,255,0.1); 
+            padding: 1px 4px; 
+            border-radius: 4px;
         }
 
-        /* Sliders */
-        input[type=range] {
-            -webkit-appearance: none; width: 100%; background: transparent;
-        }
-        input[type=range]::-webkit-slider-thumb {
-            -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%;
-            background: var(--accent); cursor: pointer; margin-top: -6px;
-        }
-        input[type=range]::-webkit-slider-runnable-track {
-            width: 100%; height: 4px; cursor: pointer; background: rgba(255,255,255,0.2); border-radius: 2px;
-        }
-        
         .btn {
-            background: linear-gradient(135deg, #2980b9, #2c3e50);
+            background: linear-gradient(135deg, #d35400, #e67e22);
             border: 1px solid var(--border);
             color: white; padding: 10px; border-radius: 8px;
             cursor: pointer; font-weight: 600; text-align: center;
         }
-        .btn:hover { background: linear-gradient(135deg, var(--accent), #2980b9); }
+        .btn:hover { background: linear-gradient(135deg, var(--accent), #d35400); }
 
-        /* --- Camera Preview --- */
+        /* Indicator Badges */
+        .status-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .level-badge {
+            font-size: 0.9rem;
+            font-weight: 800;
+            text-align: center;
+            padding: 10px 5px;
+            border-radius: 8px;
+            background: rgba(0,0,0,0.6);
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: all 0.3s ease;
+            text-shadow: 0 2px 5px rgba(0,0,0,0.5);
+        }
+        .sub-text { font-size: 0.65rem; font-weight: normal; opacity: 0.8; display: block; margin-top:2px; }
+
         .cam-box {
             pointer-events: auto;
             position: fixed; bottom: 20px; right: 20px;
@@ -108,17 +118,18 @@
             display: flex; flex-direction: column; gap: 2px;
         }
 
-        /* --- Fullscreen Logic --- */
         :fullscreen #ui-layer { opacity: 0; pointer-events: none; }
         :fullscreen .cam-box { opacity: 0; pointer-events: none; }
         :fullscreen { cursor: none; }
-        :fullscreen body { cursor: none; }
-
-        /* --- Loader --- */
+        
         #loader {
             position: fixed; inset: 0; background: #000; z-index: 100;
             display: flex; justify-content: center; align-items: center; flex-direction: column;
             color: white; font-family: monospace; transition: opacity 0.5s;
+        }
+        
+        .collision-alert {
+            color: #ff8800; font-weight: bold; opacity: 0; transition: opacity 0.2s; position:absolute; top:20px; right: 20px; font-size: 1.5rem; text-shadow: 0 0 10px red; pointer-events:none;
         }
     </style>
     
@@ -134,37 +145,36 @@
 <body>
 
     <div id="loader">
-        <div>INITIALIZING UNIVERSE...</div>
-        <div style="margin-top:10px; font-size: 0.8rem; color:#666;">Allow Camera Access</div>
+        <div>INITIALIZING...</div>
     </div>
+
+    <div id="col-status" class="collision-alert">IMPACT</div>
 
     <div id="ui-layer">
         <div class="panel left-panel">
-            <h2>✨ Danny's Particles</h2>
+            <h2>🏺 Living Cluster</h2>
             
-            <div class="control-item">
-                <label>Shape <span class="key-hint">Keys 1-6</span></label>
-                <select id="shape-select">
-                    <option value="heart">1. ❤️ Heart</option>
-                    <option value="flower">2. 🌸 Flower</option>
-                    <option value="saturn">3. 🪐 Saturn</option>
-                    <option value="buddha">4. 🧘 Buddha</option>
-                    <option value="fireworks" selected>5. 🎆 Fireworks</option> <option value="spiral">6. 🌀 Galaxy</option>
-                </select>
-                <label style="font-size:0.65rem; margin-top:2px;">或 Use Left/Right Arrows</label>
+            <div class="status-grid">
+                <div id="mode-display" class="level-badge" style="color: var(--mode-std); border-color: var(--mode-std);">
+                    PHYSICS<span class="sub-text">STANDARD</span>
+                </div>
+                <div id="color-display" class="level-badge" style="color: var(--col-flow); border-color: var(--col-flow);">
+                    COLOR<span class="sub-text">KILN FIRE</span>
+                </div>
+            </div>
+
+            <div style="font-size: 0.8rem; color: #888; margin-top: 5px; line-height: 1.6;">
+                <strong style="color:white">Physics:</strong><br>
+                <span class="key-hint">Q</span> Standard &nbsp; <span class="key-hint">W</span> Overdrive<br>
+                <div style="height:5px;"></div>
+                <strong style="color:white">Color:</strong><br>
+                <span class="key-hint">A</span> Single &nbsp; <span class="key-hint">S</span> Distinct &nbsp; <span class="key-hint">D</span> Kiln<br>
+                <hr style="border:0; border-top:1px solid rgba(255,255,255,0.1); margin: 8px 0;">
+                <span class="key-hint">0-9</span> Jars Count / <span class="key-hint">1</span> Reset
             </div>
 
             <div class="control-item">
-                <label>Color Style</label>
-                <select id="color-mode">
-                    <option value="flow">🌈 Rainbow Flow</option>
-                    <option value="custom">🎨 Custom Color</option>
-                </select>
-            </div>
-
-            <div class="control-item" id="custom-color-box" style="display: none;">
-                <label>Pick Color</label>
-                <input type="color" id="color-picker" value="#ff0055">
+                <label>Active Jars: <span id="val-count" class="val-display" style="color:var(--accent); font-size:1.2rem;">1</span></label>
             </div>
 
             <div class="control-item">
@@ -174,30 +184,6 @@
             </div>
 
             <button class="btn" id="fs-btn" style="margin-top: 10px;">⛶ Fullscreen</button>
-        </div>
-
-        <div class="panel right-panel">
-            <h2>🎛️ Tuner</h2>
-            
-            <div class="control-item">
-                <label>Size <span id="val-size" class="val-display">0.15</span></label>
-                <input type="range" id="param-size" min="0.01" max="0.5" step="0.01" value="0.15">
-            </div>
-
-            <div class="control-item">
-                <label>Speed <span id="val-speed" class="val-display">0.08</span></label>
-                <input type="range" id="param-speed" min="0.01" max="0.4" step="0.01" value="0.08">
-            </div>
-
-            <div class="control-item">
-                <label>Bloom <span id="val-bloom" class="val-display">1.5</span></label>
-                <input type="range" id="param-bloom" min="0" max="3.0" step="0.1" value="1.5">
-            </div>
-
-            <div class="control-item">
-                <label>Noise <span id="val-noise" class="val-display">0.0</span></label>
-                <input type="range" id="param-noise" min="0" max="1.0" step="0.01" value="0.0">
-            </div>
         </div>
     </div>
 
@@ -222,41 +208,77 @@
         import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 
         // --- Configuration & State ---
-        const config = {
-            mainCount: 35000,    
-            bgCount: 10000,      
-            particleSize: 0.15,
-            flowSpeed: 0.08,
-            bloomStrength: 1.5,
-            manualNoise: 0.0
+        const targetConfig = {
+            particleSize: 0.13,
+            bloomStrength: 1.3,
+            bounceStrength: 1.0,
+            flowSpeed: 0.1,
+            repulsionForce: 0.1
+        };
+
+        const currentConfig = {
+            mainCount: 110000,      
+            bgCount: 8000,        
+            
+            // Dynamic Physics Params
+            particleSize: 0.13,
+            flowSpeed: 0.1,
+            bloomStrength: 1.3,
+            bounceStrength: 1.0, 
+            repulsionForce: 0.1,
+            
+            collisionRadius: 22.0, 
+            spreadX: 140, 
+            spreadY: 80, 
+            spreadZ: 30   
         };
 
         const state = {
-            targetShape: 'fireworks', // DEFAULT CHANGED HERE
-            colorMode: 'flow',
-            customColor: new THREE.Color('#ff0055'),
+            visibleCount: 1, 
+            currentMode: 'standard', // 'standard', 'overdrive'
+            colorMode: 'flow',       // 'single', 'distinct', 'flow'
             
             // Interaction State
             handDetected: false,
             gestureScale: 1.0,
-            
-            // Rotation Physics
-            rotationMomentumX: 0.002, 
-            rotationMomentumY: 0.000, 
+            rotationMomentumX: 0.0, 
+            rotationMomentumY: 0.0, 
             prevHandX: null,
             prevHandY: null,
         };
 
-        const shapeList = ['heart', 'flower', 'saturn', 'buddha', 'fireworks', 'spiral'];
+        const shapeList = [
+            'classic', 'wine', 'modern', 'ripple', 'ginger', 
+            'amphora', 'bowl', 'budvase', 'conical', 'stacked'
+        ];
+        
+        // Random home positions
+        const jarHomePositions = [];
+        for(let i=0; i<10; i++) {
+            jarHomePositions.push({
+                x: (Math.random() - 0.5) * currentConfig.spreadX,
+                y: (Math.random() - 0.5) * currentConfig.spreadY,
+                z: (Math.random() - 0.5) * currentConfig.spreadZ
+            });
+        }
+        
+        // Pre-calculated distinct colors
+        const distinctColors = [];
+        for(let i=0; i<10; i++) {
+            const c = new THREE.Color().setHSL(i / 10, 1.0, 0.6); 
+            distinctColors.push(c);
+        }
+        const singleColor = new THREE.Color('#ffaa00');
 
         // --- Three.js Globals ---
         let scene, camera, renderer, composer, controls, bloomPass;
         let particles, geometry, material; 
-        let bgParticles, bgGeometry, bgMaterial; 
-        let positions, colors, targetPositions;
+        let bgParticles; 
+        let positions, colors;
+        let basePositions = new Float32Array(currentConfig.mainCount * 3);
+        
         let clock = new THREE.Clock();
         
-        // --- Audio Globals ---
         let audio, analyser;
         let isPlaying = false;
 
@@ -264,22 +286,22 @@
 
         function init() {
             initScene();
-            initParticles();     
-            initBackground();    
+            initParticles();      
+            initBackground();     
             setupUI();
             setupKeyboard(); 
             animate();
             startHandTracking();
+            setPhysicsMode('standard'); 
+            setColorMode('flow');
         }
 
         function initScene() {
             const container = document.getElementById('canvas-container');
-            
             scene = new THREE.Scene();
-            scene.fog = new THREE.FogExp2(0x000000, 0.02);
-
+            scene.fog = new THREE.FogExp2(0x020202, 0.012); 
             camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 1000);
-            camera.position.set(0, 0, 40);
+            camera.position.set(0, 0, 90); 
 
             renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -289,7 +311,7 @@
             const renderScene = new RenderPass(scene, camera);
             bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
             bloomPass.threshold = 0.1;
-            bloomPass.strength = config.bloomStrength;
+            bloomPass.strength = currentConfig.bloomStrength;
             bloomPass.radius = 0.5;
 
             composer = new EffectComposer(renderer);
@@ -316,14 +338,13 @@
 
         function initParticles() {
             geometry = new THREE.BufferGeometry();
-            positions = new Float32Array(config.mainCount * 3);
-            colors = new Float32Array(config.mainCount * 3);
-            targetPositions = new Float32Array(config.mainCount * 3);
+            positions = new Float32Array(currentConfig.mainCount * 3);
+            colors = new Float32Array(currentConfig.mainCount * 3);
 
-            for (let i = 0; i < config.mainCount; i++) {
-                positions[i*3] = (Math.random()-0.5) * 50;
-                positions[i*3+1] = (Math.random()-0.5) * 50;
-                positions[i*3+2] = (Math.random()-0.5) * 50;
+            for (let i = 0; i < currentConfig.mainCount; i++) {
+                positions[i*3] = (Math.random()-0.5) * 200;
+                positions[i*3+1] = (Math.random()-0.5) * 200;
+                positions[i*3+2] = (Math.random()-0.5) * 200;
                 colors[i*3] = 1; colors[i*3+1] = 1; colors[i*3+2] = 1;
             }
 
@@ -333,136 +354,130 @@
             const sprite = new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/disc.png');
 
             material = new THREE.PointsMaterial({
-                size: config.particleSize,
+                size: currentConfig.particleSize,
                 map: sprite,
                 vertexColors: true,
                 blending: THREE.AdditiveBlending,
                 depthWrite: false,
                 transparent: true,
-                opacity: 0.8
+                opacity: 0.85
             });
 
             particles = new THREE.Points(geometry, material);
             scene.add(particles);
 
-            calculateTargetShape(state.targetShape);
+            calculateBaseShapes();
         }
 
         function initBackground() {
-            bgGeometry = new THREE.BufferGeometry();
-            const bgPos = new Float32Array(config.bgCount * 3);
-            const bgCol = new Float32Array(config.bgCount * 3);
+            const bgGeometry = new THREE.BufferGeometry();
+            const bgPos = new Float32Array(currentConfig.bgCount * 3);
+            const bgCol = new Float32Array(currentConfig.bgCount * 3);
 
-            for(let i=0; i<config.bgCount; i++) {
-                const r = 50 + Math.random() * 100;
+            for(let i=0; i<currentConfig.bgCount; i++) {
+                const r = 100 + Math.random() * 100;
                 const theta = Math.random() * Math.PI * 2;
                 const phi = Math.acos((Math.random() * 2) - 1);
-
                 bgPos[i*3] = r * Math.sin(phi) * Math.cos(theta);
                 bgPos[i*3+1] = r * Math.sin(phi) * Math.sin(theta);
                 bgPos[i*3+2] = r * Math.cos(phi);
-
-                const c = new THREE.Color();
-                c.setHSL(Math.random(), 0.6, 0.3 + Math.random()*0.3);
-                bgCol[i*3] = c.r; 
-                bgCol[i*3+1] = c.g; 
-                bgCol[i*3+2] = c.b;
+                const c = new THREE.Color().setHSL(Math.random(), 0.5, 0.2); 
+                bgCol[i*3] = c.r; bgCol[i*3+1] = c.g; bgCol[i*3+2] = c.b;
             }
-
             bgGeometry.setAttribute('position', new THREE.BufferAttribute(bgPos, 3));
             bgGeometry.setAttribute('color', new THREE.BufferAttribute(bgCol, 3));
-
             const starSprite = new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/spark1.png');
-
-            bgMaterial = new THREE.PointsMaterial({
-                size: 0.3, 
-                map: starSprite,
-                vertexColors: true,
-                blending: THREE.AdditiveBlending,
-                depthWrite: false,
-                transparent: true,
-                opacity: 0.4
-            });
-
+            const bgMaterial = new THREE.PointsMaterial({ size: 0.4, map: starSprite, vertexColors: true, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.3 });
             bgParticles = new THREE.Points(bgGeometry, bgMaterial);
             scene.add(bgParticles);
         }
 
-        function calculateTargetShape(shapeType) {
-            const count = config.mainCount;
-            for (let i = 0; i < count; i++) {
-                const i3 = i * 3;
-                let x=0, y=0, z=0;
-                const u = Math.random() * Math.PI * 2;
-                const v = Math.random() * Math.PI;
-                const p = i / count;
+        function calculateBaseShapes() {
+            const totalCount = currentConfig.mainCount;
+            const shapeCount = shapeList.length;
+            const particlesPerShape = Math.floor(totalCount / shapeCount);
 
-                switch(shapeType) {
-                    case 'heart':
-                        const tH = p * Math.PI * 2 * 12; 
-                        x = 16 * Math.pow(Math.sin(tH), 3);
-                        y = 13 * Math.cos(tH) - 5*Math.cos(2*tH) - 2*Math.cos(3*tH) - Math.cos(4*tH);
-                        z = (Math.random()-0.5) * 6;
-                        x*=0.8; y*=0.8;
-                        break;
-                    case 'flower':
-                        const k = 5;
-                        const rF = 14 * Math.cos(k * u) + 4;
-                        x = rF * Math.sin(v) * Math.cos(u);
-                        y = rF * Math.sin(v) * Math.sin(u);
-                        z = rF * Math.cos(v) * 0.6;
-                        break;
-                    case 'saturn':
-                        if (i < count * 0.35) {
-                            x = 8 * Math.sin(v) * Math.cos(u);
-                            y = 8 * Math.sin(v) * Math.sin(u);
-                            z = 8 * Math.cos(v);
-                        } else {
-                            const ang = p * Math.PI * 2 * 20;
-                            const rad = 11 + Math.random() * 9;
-                            x = rad * Math.cos(ang);
-                            z = rad * Math.sin(ang);
-                            y = (Math.random()-0.5);
-                            const tilt = 0.4;
-                            const ty = y * Math.cos(tilt) - z * Math.sin(tilt);
-                            const tz = y * Math.sin(tilt) + z * Math.cos(tilt);
-                            y = ty; z = tz;
-                        }
-                        break;
-                    case 'buddha':
-                        if (i < count * 0.45) { 
-                            x = 7 * Math.sin(v) * Math.cos(u);
-                            y = 7 * Math.sin(v) * Math.sin(u) - 3;
-                            z = 7 * Math.cos(v);
-                        } else if (i < count * 0.65) { 
-                            x = 3.5 * Math.sin(v) * Math.cos(u);
-                            y = 3.5 * Math.sin(v) * Math.sin(u) + 6;
-                            z = 3.5 * Math.cos(v);
-                        } else { 
-                            const ang = p * Math.PI * 2 * 10;
-                            const rL = 10 + Math.random()*2;
-                            x = rL * Math.cos(ang);
-                            z = rL * Math.sin(ang) * 0.6;
-                            y = -9;
-                        }
-                        break;
-                    case 'fireworks':
-                        const rFire = Math.pow(Math.random(), 0.3) * 28;
-                        x = rFire * Math.sin(v) * Math.cos(u);
-                        y = rFire * Math.sin(v) * Math.sin(u);
-                        z = rFire * Math.cos(v);
-                        break;
-                    case 'spiral':
-                        const tS = i * 0.05;
-                        const rS = tS * 0.4;
-                        x = rS * Math.cos(tS);
-                        z = rS * Math.sin(tS);
-                        y = (Math.random()-0.5) * 6;
-                        break;
+            let pIndex = 0;
+
+            for (let s = 0; s < shapeCount; s++) {
+                const currentShape = shapeList[s];
+                for (let i = 0; i < particlesPerShape; i++) {
+                    if (pIndex >= totalCount) break;
+                    const i3 = pIndex * 3;
+                    const p = i / particlesPerShape; 
+                    const theta = Math.random() * Math.PI * 2;
+                    let h, r;
+
+                    switch(currentShape) {
+                        case 'classic': h=(p-0.5)*18; r=3.5+3*Math.cos(h*0.25)+1.2*Math.sin(h*0.5+1); if(h<-7)r*=(h+9)/2; break;
+                        case 'wine': h=(p*22)-11; if(h<2){r=4.0;if(h<-9)r*=Math.pow((h+11)/2,0.3);}else if(h<5){r=4.0*Math.exp(-(h-2)*0.8);}else{r=1.1;if(h>10.5)r=1.4;} break;
+                        case 'modern': h=(p-0.5)*18; let bR=2.5+Math.abs(h)*0.3; if(h>0)bR=2.5+Math.sin(h)*1.8; r=bR*(1+0.3*Math.cos(6*(theta+h*0.5))); break;
+                        case 'ripple': h=(p-0.5)*20; r=(3.5+0.5*Math.cos(h*0.2))*(1+0.25*Math.sin(6*theta+h*0.8)); if(h>9)r*=0.9; break;
+                        case 'ginger': h=(p-0.5)*14; if(h>5)r=1.2*Math.cos((h-6)*2);else if(h>4)r=3+(5-h)*2;else r=6*Math.cos(h*0.25); if(r<0)r=0; break;
+                        case 'amphora': h=(p-0.5)*20; if(h<-7)r=0.5+(h+10)*0.5;else if(h<5)r=5.5*Math.cos((h+2)*0.15);else{r=2.2;if(h>8)r+=(h-8);} if(r<0)r=0; break;
+                        case 'bowl': h=(p-0.5)*10; r=7*Math.sqrt((h+5.5)/10); if(h<-4.5)r=(h+5.5)*2; break;
+                        case 'budvase': h=(p-0.5)*28; if(h<-10){let lH=h+12;r=(Math.abs(lH)>2.5)?0:Math.sqrt(6.25-lH*lH);}else{r=0.7;if(h>12)r=0.7+(h-12)*0.4;} break;
+                        case 'conical': h=(p-0.5)*18; if(h<3)r=2+(3-h)*0.5;else{r=2;if(h>7)r=2.3;} break;
+                        case 'stacked': h=(p-0.5)*22; r=2.5+1.5*Math.abs(Math.sin(h*0.8)); if(Math.abs(h)>9)r*=0.6; break;
+                    }
+                    basePositions[i3] = r * Math.cos(theta);
+                    basePositions[i3+1] = h;
+                    basePositions[i3+2] = r * Math.sin(theta);
+                    pIndex++;
                 }
-                targetPositions[i3] = x;
-                targetPositions[i3+1] = y;
-                targetPositions[i3+2] = z;
+            }
+        }
+
+        // --- MODE SYSTEMS ---
+        function setPhysicsMode(mode) {
+            state.currentMode = mode;
+            const display = document.getElementById('mode-display');
+            display.style.color = ''; display.style.borderColor = ''; display.style.boxShadow = '';
+
+            if (mode === 'standard') {
+                targetConfig.particleSize = 0.13;
+                targetConfig.bloomStrength = 1.3;
+                targetConfig.bounceStrength = 1.0; 
+                targetConfig.flowSpeed = 0.1;
+                targetConfig.repulsionForce = 0.1;
+
+                display.innerHTML = 'PHYSICS<br><span class="sub-text">STANDARD</span>';
+                display.style.color = 'var(--mode-std)';
+                display.style.borderColor = 'var(--mode-std)';
+            } 
+            else if (mode === 'overdrive') {
+                targetConfig.particleSize = 0.28; 
+                targetConfig.bloomStrength = 3.0; 
+                targetConfig.bounceStrength = 3.5; 
+                targetConfig.flowSpeed = 0.35;    
+                targetConfig.repulsionForce = 0.25;
+
+                display.innerHTML = 'PHYSICS<br><span class="sub-text">OVERDRIVE</span>';
+                display.style.color = 'var(--mode-od)';
+                display.style.borderColor = 'var(--mode-od)';
+                display.style.boxShadow = '0 0 20px rgba(255,0,85,0.4)';
+            }
+        }
+
+        function setColorMode(mode) {
+            state.colorMode = mode;
+            const display = document.getElementById('color-display');
+            display.style.color = ''; display.style.borderColor = '';
+
+            if (mode === 'single') {
+                display.innerHTML = 'COLOR<br><span class="sub-text">SINGLE</span>';
+                display.style.color = 'var(--col-single)';
+                display.style.borderColor = 'var(--col-single)';
+            }
+            else if (mode === 'distinct') {
+                display.innerHTML = 'COLOR<br><span class="sub-text">DISTINCT</span>';
+                display.style.color = 'var(--col-multi)';
+                display.style.borderColor = 'var(--col-multi)';
+            }
+            else if (mode === 'flow') {
+                display.innerHTML = 'COLOR<br><span class="sub-text">KILN FIRE</span>';
+                display.style.color = 'var(--col-flow)';
+                display.style.borderColor = 'var(--col-flow)';
             }
         }
 
@@ -470,111 +485,177 @@
             requestAnimationFrame(animate);
             const time = clock.getElapsedTime();
             
+            const lerpFactor = 0.05;
+            currentConfig.particleSize = THREE.MathUtils.lerp(currentConfig.particleSize, targetConfig.particleSize, lerpFactor);
+            currentConfig.bloomStrength = THREE.MathUtils.lerp(currentConfig.bloomStrength, targetConfig.bloomStrength, lerpFactor);
+            currentConfig.bounceStrength = THREE.MathUtils.lerp(currentConfig.bounceStrength, targetConfig.bounceStrength, lerpFactor);
+            currentConfig.flowSpeed = THREE.MathUtils.lerp(currentConfig.flowSpeed, targetConfig.flowSpeed, lerpFactor);
+            currentConfig.repulsionForce = THREE.MathUtils.lerp(currentConfig.repulsionForce, targetConfig.repulsionForce, lerpFactor);
+
             let audioAvg = 0;
+            let swimAmp = 1.0; 
+            let scalePump = 1.0;
+
             if (isPlaying) {
                 analyser.getFrequencyData();
                 audioAvg = analyser.getAverageFrequency() / 255;
+                swimAmp = 1.0 + (audioAvg * 5.0 * currentConfig.bounceStrength); 
+                scalePump = 1.0 + (audioAvg * 0.3 * currentConfig.bounceStrength);
+            } else {
+                swimAmp = 1.0 * currentConfig.bounceStrength;
             }
 
-            // Apply updates from Tuner
-            material.size = config.particleSize;
-            bloomPass.strength = config.bloomStrength;
+            material.size = currentConfig.particleSize;
+            bloomPass.strength = currentConfig.bloomStrength;
 
+            // Global Rotation & Hand Momentum
             particles.rotation.y += state.rotationMomentumX;
             bgParticles.rotation.y += state.rotationMomentumX * 0.3;
             
             particles.rotation.x += state.rotationMomentumY;
+            // TIGHT CONSTRAINT: Keep vertical rotation subtle
+            particles.rotation.x = Math.max(-0.2, Math.min(0.2, particles.rotation.x));
+            
             bgParticles.rotation.x += state.rotationMomentumY * 0.3;
-
-            state.rotationMomentumX *= 0.96; 
-            if (Math.abs(state.rotationMomentumX) < 0.002) state.rotationMomentumX = 0.002 * Math.sign(state.rotationMomentumX || 1);
-
-            state.rotationMomentumY *= 0.96;
-            if (Math.abs(state.rotationMomentumY) < 0.0005) state.rotationMomentumY = 0;
-
-            document.getElementById('spin-status').innerText = `H-Spd: ${(state.rotationMomentumX*100).toFixed(0)}`;
-            document.getElementById('v-spin-status').innerText = `V-Spd: ${(state.rotationMomentumY*100).toFixed(0)}`;
+            bgParticles.rotation.x = Math.max(-0.2, Math.min(0.2, bgParticles.rotation.x));
+            
+            state.rotationMomentumX *= 0.95; 
+            state.rotationMomentumY *= 0.95;
+            
+            document.getElementById('spin-status').innerText = `H-Spd: ${(state.rotationMomentumX*1000).toFixed(0)}`;
+            document.getElementById('v-spin-status').innerText = `V-Spd: ${(state.rotationMomentumY*1000).toFixed(0)}`;
 
             const pos = geometry.attributes.position.array;
             const col = geometry.attributes.color.array;
+            let gestureScale = state.handDetected ? state.gestureScale : 1.0;
             
-            let currentScale = state.handDetected ? state.gestureScale : 1.0 + Math.sin(time*1.5)*0.1;
-            currentScale += audioAvg * 0.5;
+            const speed = currentConfig.flowSpeed * (1 + audioAvg);
+            const particlesPerJar = Math.floor(currentConfig.mainCount / shapeList.length);
+            const tSwim = time * 0.3; 
 
-            const speed = config.flowSpeed * (1 + audioAvg);
-            const noise = (audioAvg * 0.8) + parseFloat(config.manualNoise); 
+            // --- POSITION ---
+            const activeJars = [];
+            for(let j=0; j < state.visibleCount; j++) {
+                const home = jarHomePositions[j];
+                const swimX = Math.sin(tSwim + j) * 4.0 * swimAmp; 
+                const swimY = Math.cos(tSwim * 0.8 + j * 2) * 3.0 * swimAmp;
+                const swimZ = Math.sin(tSwim * 0.5 + j) * 4.0 * swimAmp;
+                activeJars.push({ x: home.x + swimX, y: home.y + swimY, z: home.z + swimZ });
+            }
 
-            for(let i=0; i < config.mainCount; i++) {
+            // --- COLLISION ---
+            const jarColStatus = new Array(state.visibleCount).fill(false);
+            let anyCollision = false;
+            const iterations = 3; 
+            const minDist = currentConfig.collisionRadius;
+
+            for(let k=0; k<iterations; k++) {
+                for(let a=0; a < state.visibleCount; a++) {
+                    for(let b=a+1; b < state.visibleCount; b++) {
+                        let dx = activeJars[b].x - activeJars[a].x;
+                        let dy = activeJars[b].y - activeJars[a].y;
+                        let dz = activeJars[b].z - activeJars[a].z;
+                        let distSq = dx*dx + dy*dy + dz*dz;
+                        if (distSq < (minDist * minDist) && distSq > 0.001) {
+                            const dist = Math.sqrt(distSq);
+                            jarColStatus[a] = true; jarColStatus[b] = true; anyCollision = true;
+                            const overlap = minDist - dist;
+                            const force = overlap * currentConfig.repulsionForce; 
+                            const nx = dx / dist; const ny = dy / dist; const nz = dz / dist;
+                            activeJars[a].x -= nx * force; activeJars[a].y -= ny * force; activeJars[a].z -= nz * force;
+                            activeJars[b].x += nx * force; activeJars[b].y += ny * force; activeJars[b].z += nz * force;
+                        }
+                    }
+                }
+            }
+            document.getElementById('col-status').style.opacity = anyCollision ? 1 : 0;
+
+            // --- RENDER ---
+            for(let i=0; i < currentConfig.mainCount; i++) {
                 const i3 = i*3;
-                const tx = targetPositions[i3] * currentScale;
-                const ty = targetPositions[i3+1] * currentScale;
-                const tz = targetPositions[i3+2] * currentScale;
+                const jarIndex = Math.floor(i / particlesPerJar);
 
-                pos[i3] += (tx - pos[i3]) * speed;
-                pos[i3+1] += (ty - pos[i3+1]) * speed;
-                pos[i3+2] += (tz - pos[i3+2]) * speed;
-
-                if(noise > 0.01) {
-                    pos[i3] += (Math.random()-0.5) * noise;
-                    pos[i3+1] += (Math.random()-0.5) * noise;
-                    pos[i3+2] += (Math.random()-0.5) * noise;
+                if (jarIndex >= state.visibleCount) {
+                    pos[i3] = 0; pos[i3+1] = -500; pos[i3+2] = 0;
+                    continue; 
                 }
 
-                if (state.colorMode === 'flow') {
-                    const hue = (time * 0.1 + (pos[i3]*0.015)) % 1;
-                    const c = new THREE.Color().setHSL(hue, 0.8, 0.6);
+                const center = activeJars[jarIndex];
+                const isColliding = jarColStatus[jarIndex];
+                let bx = basePositions[i3]; let by = basePositions[i3+1]; let bz = basePositions[i3+2];
+                bx *= scalePump * gestureScale; by *= scalePump * gestureScale; bz *= scalePump * gestureScale;
+
+                if (isColliding) {
+                    const jitterStr = (state.currentMode === 'overdrive') ? 5.0 : 2.0;
+                    bx += (Math.random() - 0.5) * jitterStr; 
+                    by += (Math.random() - 0.5) * jitterStr; 
+                    bz += (Math.random() - 0.5) * jitterStr; 
+                }
+
+                const targetX = center.x + bx; const targetY = center.y + by; const targetZ = center.z + bz;
+                pos[i3] += (targetX - pos[i3]) * speed; pos[i3+1] += (targetY - pos[i3+1]) * speed; pos[i3+2] += (targetZ - pos[i3+2]) * speed;
+
+                // --- COLOR LOGIC (A/S/D) ---
+                if (state.colorMode === 'single') {
+                    col[i3] = singleColor.r; col[i3+1] = singleColor.g; col[i3+2] = singleColor.b;
+                } 
+                else if (state.colorMode === 'distinct') {
+                    const distinct = distinctColors[jarIndex % distinctColors.length];
+                    col[i3] = distinct.r; col[i3+1] = distinct.g; col[i3+2] = distinct.b;
+                }
+                else {
+                    const heightFactor = (by + 10) / 20; 
+                    const hueOffset = jarIndex * 0.05; 
+                    const hue = (0.02 + hueOffset + (heightFactor * 0.12) + (time * 0.05)) % 1; 
+                    const c = new THREE.Color().setHSL(hue, 0.9, 0.5 + audioAvg*0.3);
                     col[i3] = c.r; col[i3+1] = c.g; col[i3+2] = c.b;
-                } else {
-                    col[i3] = state.customColor.r;
-                    col[i3+1] = state.customColor.g;
-                    col[i3+2] = state.customColor.b;
                 }
             }
-
-            if (audioAvg > 0.1 || Math.random() > 0.9) {
-                bgMaterial.size = 0.3 + audioAvg * 0.5;
-            }
-
             geometry.attributes.position.needsUpdate = true;
             geometry.attributes.color.needsUpdate = true;
-            
             controls.update();
             composer.render();
         }
 
-        // --- HAND TRACKING ---
+        // --- INPUT HANDLING ---
+        function setupKeyboard() {
+            window.addEventListener('keydown', (e) => {
+                const k = e.key.toLowerCase();
+                
+                // Jars
+                if (e.key >= '2' && e.key <= '9') state.visibleCount = parseInt(e.key);
+                if (e.key === '1') state.visibleCount = 1;
+                if (e.key === '0') state.visibleCount = 10;
+                document.getElementById('val-count').innerText = state.visibleCount;
+
+                // Physics
+                if (k === 'q') setPhysicsMode('standard');
+                if (k === 'w') setPhysicsMode('overdrive');
+
+                // Color
+                if (k === 'a') setColorMode('single');
+                if (k === 's') setColorMode('distinct');
+                if (k === 'd') setColorMode('flow');
+            });
+        }
+
         function startHandTracking() {
             const video = document.getElementById('webcam');
             const gestureLabel = document.getElementById('gesture-name');
-
             const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-            
-            hands.setOptions({
-                maxNumHands: 1,
-                modelComplexity: 1,
-                minDetectionConfidence: 0.6,
-                minTrackingConfidence: 0.6
-            });
-
+            hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
             hands.onResults((results) => {
                 if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                     state.handDetected = true;
-                    const hand = results.multiHandLandmarks[0];
-                    processHand(hand, gestureLabel);
+                    processHand(results.multiHandLandmarks[0], gestureLabel);
                 } else {
                     state.handDetected = false;
-                    state.prevHandX = null;
-                    state.prevHandY = null;
-                    gestureLabel.innerText = "No Hand";
-                    gestureLabel.style.color = "#888";
+                    state.prevHandX = null; state.prevHandY = null;
+                    gestureLabel.innerText = "No Hand"; gestureLabel.style.color = "#888";
                     state.gestureScale = THREE.MathUtils.lerp(state.gestureScale, 1.0, 0.05);
                 }
             });
-
-            const camera = new Camera(video, {
-                onFrame: async () => { await hands.send({image: video}); },
-                width: 320, height: 240
-            });
+            const camera = new Camera(video, { onFrame: async () => { await hands.send({image: video}); }, width: 320, height: 240 });
             camera.start().then(() => {
                 document.getElementById('loader').style.opacity = 0;
                 setTimeout(()=>document.getElementById('loader').remove(),500);
@@ -583,80 +664,28 @@
 
         function processHand(landmarks, labelElem) {
             const dist = (i1, i2) => Math.hypot(landmarks[i1].x - landmarks[i2].x, landmarks[i1].y - landmarks[i2].y);
-            const fingerTips = [4, 8, 12, 16, 20];
-            const fingerPips = [2, 6, 10, 14, 18];
-            const extended = fingerTips.map((tip, i) => dist(tip, 0) > dist(fingerPips[i], 0));
-
+            const extended = [4,8,12,16,20].map((t,i) => dist(t,0) > dist([2,6,10,14,18][i],0));
             let targetScale = state.gestureScale;
-            let gesture = "Tracking...";
-            let color = "#fff";
-
-            if (extended.every(v => v === false)) {
-                targetScale = 0.2; gesture = "✊ FIST (Implode)"; color = "#ff4444";
-            } else if (extended.every(v => v === true)) {
-                targetScale = 1.8; gesture = "✋ PALM (Explode)"; color = "#00ff00";
-            } else if (extended[0] && extended[1] && !extended[2]) {
-                targetScale = Math.max(0.1, dist(4, 8) * 6); gesture = "👌 PINCH (Size)"; color = "#00f2ff";
-            } else {
-                targetScale = THREE.MathUtils.lerp(state.gestureScale, 1.0, 0.05);
-            }
+            let gesture = "Tracking..."; let color = "#fff";
+            if (extended.every(v => !v)) { targetScale = 0.5; gesture = "✊ COMPRESS"; color = "#ff4444"; } 
+            else if (extended.every(v => v)) { targetScale = 1.3; gesture = "✋ EXPAND"; color = "#00ff00"; } 
+            else { targetScale = THREE.MathUtils.lerp(state.gestureScale, 1.0, 0.05); }
             state.gestureScale = THREE.MathUtils.lerp(state.gestureScale, targetScale, 0.1);
-            labelElem.innerText = gesture;
-            labelElem.style.color = color;
-
-            const currentX = landmarks[9].x;
-            const currentY = landmarks[9].y;
-
+            labelElem.innerText = gesture; labelElem.style.color = color;
+            const cx = landmarks[9].x; const cy = landmarks[9].y;
             if (state.prevHandX !== null) {
-                const deltaX = currentX - state.prevHandX;
-                if (Math.abs(deltaX) > 0.005) {
-                    state.rotationMomentumX += deltaX * -0.5; 
-                }
+                const dx = cx - state.prevHandX; const dy = cy - state.prevHandY;
+                
+                // --- DECOUPLED SENSITIVITY ---
+                // Horizontal (dx): -0.4 for smooth, responsive spinning
+                if (Math.abs(dx) > 0.002) state.rotationMomentumX += dx * -0.4;
+                // Vertical (dy): -0.1 for heavy, controlled tilting
+                if (Math.abs(dy) > 0.002) state.rotationMomentumY += dy * -0.1;
             }
-
-            if (state.prevHandY !== null) {
-                const deltaY = currentY - state.prevHandY;
-                if (Math.abs(deltaY) > 0.005) {
-                    state.rotationMomentumY += deltaY * -0.5; 
-                }
-            }
-
-            state.prevHandX = currentX;
-            state.prevHandY = currentY;
-        }
-
-        // --- KEYBOARD & UI ---
-        function changeShape(shape) {
-            state.targetShape = shape;
-            calculateTargetShape(state.targetShape);
-            document.getElementById('shape-select').value = shape;
-        }
-
-        function setupKeyboard() {
-            window.addEventListener('keydown', (e) => {
-                const keyMap = { '1': 'heart', '2': 'flower', '3': 'saturn', '4': 'buddha', '5': 'fireworks', '6': 'spiral' };
-                if(keyMap[e.key]) changeShape(keyMap[e.key]);
-
-                if (e.key === 'ArrowRight') {
-                    const idx = shapeList.indexOf(state.targetShape);
-                    changeShape(shapeList[(idx + 1) % shapeList.length]);
-                }
-                if (e.key === 'ArrowLeft') {
-                    const idx = shapeList.indexOf(state.targetShape);
-                    changeShape(shapeList[(idx - 1 + shapeList.length) % shapeList.length]);
-                }
-            });
+            state.prevHandX = cx; state.prevHandY = cy;
         }
 
         function setupUI() {
-            // Main Left Panel
-            document.getElementById('shape-select').value = state.targetShape; // Ensure Dropdown Matches State
-            document.getElementById('shape-select').addEventListener('change', (e) => changeShape(e.target.value));
-            document.getElementById('color-mode').addEventListener('change', (e) => {
-                state.colorMode = e.target.value;
-                document.getElementById('custom-color-box').style.display = (e.target.value==='custom')?'flex':'none';
-            });
-            document.getElementById('color-picker').addEventListener('input', (e) => state.customColor.set(e.target.value));
             document.getElementById('audio-file').addEventListener('change', (e) => {
                 const file = e.target.files[0];
                 if(!file) return;
@@ -666,22 +695,7 @@
                 });
                 r.readAsArrayBuffer(file);
             });
-            document.getElementById('fs-btn').addEventListener('click', ()=> {
-                !document.fullscreenElement ? document.documentElement.requestFullscreen() : document.exitFullscreen();
-            });
-
-            // Tuner Right Panel Logic
-            const bindTuner = (id, param, displayId) => {
-                document.getElementById(id).addEventListener('input', (e) => {
-                    config[param] = parseFloat(e.target.value);
-                    document.getElementById(displayId).innerText = e.target.value;
-                });
-            };
-
-            bindTuner('param-size', 'particleSize', 'val-size');
-            bindTuner('param-speed', 'flowSpeed', 'val-speed');
-            bindTuner('param-bloom', 'bloomStrength', 'val-bloom');
-            bindTuner('param-noise', 'manualNoise', 'val-noise');
+            document.getElementById('fs-btn').addEventListener('click', ()=> { !document.fullscreenElement ? document.documentElement.requestFullscreen() : document.exitFullscreen(); });
         }
     </script>
 </body>
