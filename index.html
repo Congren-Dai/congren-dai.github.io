@@ -100,8 +100,9 @@
 
         let scene, camera, renderer, composer, bloomPass, controls, particles, geometry, material, basePositions, audio, analyser, isPlaying = false;
         const mainCount = 130000;
-        // SWAPPED 1st (lotusbowl) and 7th (meiping)
-        const shapeList = ['lotusbowl', 'yuhuchun', 'tianqiu', 'cong', 'garlic', 'moonflask', 'meiping', 'gu', 'malan', 'zun'];
+        
+        // Jar 1 updated to 'generaljar'
+        const shapeList = ['generaljar', 'yuhuchun', 'tianqiu', 'cong', 'garlic', 'moonflask', 'meiping', 'gu', 'malan', 'zun'];
         const s4Colors = [new THREE.Color(0xffaa00), new THREE.Color(0x00f2ff)];
 
         init();
@@ -154,59 +155,78 @@
             basePositions = new Float32Array(mainCount * 3);
             const perShape = Math.floor(mainCount / shapeList.length);
 
+            // Standardised Height for all jars
+            const targetH = 20;
+
             for (let i = 0; i < mainCount; i++) {
                 const sIdx = Math.floor(i / perShape), shape = shapeList[sIdx];
                 const theta = Math.random() * Math.PI * 2, p = (i % perShape) / perShape;
-                let h, r;
+                
+                // Set h range to exactly [-10, 10]
+                let h = (p - 0.5) * targetH;
+                let r;
                 
                 switch(shape) {
+                    case 'generaljar': {
+                        const s = 1.25; // Original 16 scaled to 20
+                        const localH = h / s;
+                        if (localH > 6) r = (2.0 + Math.cos((localH - 7) * 1.5) * 1.8) * s;
+                        else if (localH > 4) r = 2.2 * s;
+                        else {
+                            let normH = (localH + 8) / 12;
+                            r = (2.5 + 5.0 * Math.sin(normH * Math.PI * 0.7)) * s;
+                        }
+                        break;
+                    }
                     case 'meiping': 
-                        h = (p - 0.5) * 20;
+                        // Original 20, no scaling needed
                         r = (h < 5) ? 5.5 * Math.cos(h * 0.12) : 5.5 * Math.cos(5 * 0.12) * Math.exp(-(h-5)*0.5);
                         break;
-                    case 'yuhuchun': 
-                        h = (p - 0.5) * 22;
-                        r = (h < -2) ? 6 * Math.cos((h+6)*0.15) : 1.5 + 4.5 * Math.exp(-(h+2)*0.3);
+                    case 'yuhuchun': {
+                        const s = 20 / 22;
+                        const localH = h / s;
+                        r = ((localH < -2) ? 6 * Math.cos((localH+6)*0.15) : 1.5 + 4.5 * Math.exp(-(localH+2)*0.3)) * s;
                         break;
+                    }
                     case 'tianqiu': 
-                        h = (p - 0.5) * 20;
                         r = (h < 2) ? Math.sqrt(Math.max(0, 64 - Math.pow(h+4, 2))) : 1.8;
                         break;
                     case 'cong': 
-                        h = (p - 0.5) * 20;
                         const side = 4.5;
                         r = side / Math.max(Math.abs(Math.cos(theta)), Math.abs(Math.sin(theta)));
                         if (h > 8 || h < -8) r *= 0.8; 
                         break;
-                    case 'garlic': 
-                        h = (p - 0.5) * 24;
-                        if (h > 9) r = 2.5 * Math.cos((h-10));
-                        else if (h > 0) r = 1.2;
-                        else r = 5.5 * Math.cos((h+4)*0.18);
+                    case 'garlic': {
+                        const s = 20 / 24;
+                        const localH = h / s;
+                        if (localH > 9) r = (2.5 * Math.cos((localH-10))) * s;
+                        else if (localH > 0) r = 1.2 * s;
+                        else r = (5.5 * Math.cos((localH+4)*0.18)) * s;
                         break;
-                    case 'moonflask': 
-                        h = (p - 0.5) * 18;
-                        let rad = (h < 4) ? Math.sqrt(Math.max(0, 49 - Math.pow(h+2, 2))) : 1.5;
+                    }
+                    case 'moonflask': {
+                        const s = 20 / 18;
+                        const localH = h / s;
+                        let rad = (localH < 4) ? Math.sqrt(Math.max(0, 49 - Math.pow(localH+2, 2))) : 1.5;
                         let thickness = 0.4 + 0.6 * Math.abs(Math.sin(theta));
-                        r = rad * thickness;
+                        r = rad * thickness * s;
                         break;
-                    case 'lotusbowl': 
-                        h = (p - 0.5) * 10;
-                        r = 3 + 6 * Math.pow((h + 5) / 10, 1.5);
-                        r *= (1 + 0.1 * Math.sin(theta * 10)); 
+                    }
+                    case 'gu': {
+                        const s = 20 / 18;
+                        const localH = h / s;
+                        r = (2.0 + Math.pow(Math.abs(localH)/10, 2.5) * 2.5) * s;
                         break;
-                    case 'gu': 
-                        h = (p - 0.5) * 18; 
-                        r = 2.0 + Math.pow(Math.abs(h)/10, 2.5) * 2.5;
-                        break;
+                    }
                     case 'malan': 
-                        h = (p - 0.5) * 20;
                         r = (h > 2) ? 1.2 : 5.5 * Math.exp(-(Math.pow(h+5, 2))/40);
                         break;
-                    case 'zun': 
-                        h = (p - 0.5) * 18;
-                        r = 4 + 2 * Math.sin(h * 0.4);
+                    case 'zun': {
+                        const s = 20 / 18;
+                        const localH = h / s;
+                        r = (4 + 2 * Math.sin(localH * 0.4)) * s;
                         break;
+                    }
                 }
 
                 const relief = 1 + 0.06 * Math.sin(theta * 12 + h * 0.5) * Math.cos(theta * 8 - h);
