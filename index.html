@@ -179,7 +179,6 @@
 
         function reshuffleGrid() {
             const slots = [];
-            // Increased matrix interval for Scene 3
             for(let y=-1; y<=1; y++) for(let x=-1; x<=1; x++) slots.push(new THREE.Vector3(x*180, y*100, 0));
             slots.sort(() => Math.random() - 0.5);
             for(let i=0; i<6; i++) state.jarOffsets[i].copy(slots[i]);
@@ -217,7 +216,6 @@
             else if (id === 2 || id === 3) {
                 state.visibleCount = 6;
                 if (id === 3) reshuffleGrid();
-                // Increased interval for Scene 2
                 else for(let i=0; i<6; i++) state.jarOffsets[i].set((i%3-1)*140, (Math.floor(i/3)-0.5)*-160, 0);
                 pickRandomJars();
             } else if (id === 4) {
@@ -347,7 +345,6 @@
                         bx = tempV.x; by = tempV.y; bz = tempV.z;
                         off.lerp(new THREE.Vector3(0,0,0), state.pinchStrength);
                     }
-                    // Increased jar size for Scene 2 & 3
                     const scale = 4.0; bx *= scale; by *= scale; bz *= scale;
                     colArr[i3] = 0.4 + audioAvg; colArr[i3+1] = 0.5; colArr[i3+2] = 1.0;
                     bloomPass.strength = 1.2 + audioAvg * 3.5;
@@ -382,10 +379,14 @@
                     const colS1 = new THREE.Color(0x00f2ff);
                     const baseCol = colS4.clone().lerp(colS1, s5ColFactor);
                     const freqSubtlety = (analyser.getFrequencyData()[jarIdx*2] || 0) / 255 * 0.1;
-                    const fadeDarken = 1.0 - Math.pow(s5Progress, 3.5);
+                    
+                    // FINE-TUNED: Increased power to 6.0 so brightness stays high longer
+                    const fadeDarken = 1.0 - Math.pow(s5Progress, 6.0);
+                    
                     colArr[i3] = (baseCol.r + freqSubtlety) * 1.8 * fadeDarken; 
                     colArr[i3+1] = (baseCol.g + freqSubtlety) * 1.8 * fadeDarken;
                     colArr[i3+2] = (baseCol.b + freqSubtlety) * 2.2 * fadeDarken;
+                    
                     if (elapsed >= 408.0) {
                         material.opacity = 0; state.visibleCount = 0; bloomPass.strength = 0;
                         renderer.setClearColor(0x000000, 1);
@@ -394,7 +395,8 @@
                         material.opacity = Math.max(0, 1.0 - (elapsed - 407.2) * 2.5);
                         bloomPass.strength = 0.5 + Math.abs(flash) * 10.0;
                     } else {
-                        bloomPass.strength = 1.2 * (1.0 - s5Progress);
+                        // FINE-TUNED: Using square root of inverse progress to keep bloom stronger longer
+                        bloomPass.strength = 1.2 * Math.sqrt(1.0 - s5Progress);
                         material.opacity = 1.0;
                     }
                 }
