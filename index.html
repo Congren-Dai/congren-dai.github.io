@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Living Pottery - Scene 4 Fixed View Edition</title>
+    <title>Living Pottery - Scene 5 Balanced Edition</title>
     
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
@@ -90,7 +90,8 @@
             { id: 2, start: 70, end: 130, name: "SELECTIVE BREAKOUT", desc: "Selective Displacement" },
             { id: 3, start: 130, end: 200, name: "SYSTEM IMBALANCE", desc: "Angular Instability" },
             { id: 4, start: 200, end: 320, name: "DYNAMIC SYNC FIELD", desc: "Lock View & Horizontal Circle" },
-            { id: 5, start: 320, end: 9999, name: "CONCLUSION", desc: "Silence" }
+            { id: 5, start: 320, end: 408, name: "RESIDUAL DISSIPATION", desc: "Energy Exhaustion & Residual Impression" },
+            { id: 6, start: 408, end: 9999, name: "VOID", desc: "Total Silence" }
         ];
 
         let scene, camera, renderer, composer, bloomPass, controls, particles, geometry, material, basePositions, audio, analyser, isPlaying = false;
@@ -194,6 +195,8 @@
         function updateVisualParams(id, entry) {
             document.getElementById('scene-display').innerHTML = `SCENE ${id}<span class="sub-text">${entry.name}</span>`;
             document.getElementById('scene-desc').innerText = entry.desc;
+            material.opacity = 1.0; 
+
             if (id === 1) { state.visibleCount = 1; state.jarOffsets[0].set(0,0,0); }
             else if (id === 2 || id === 3) {
                 state.visibleCount = 6;
@@ -228,25 +231,21 @@
                 if (elapsed - state.lastSwitchTime > 4.2) { pickRandomJars(); state.lastSwitchTime = elapsed; }
             }
 
-            // Global View Control: Strict reset when S4 unified field is active
+            // Global View Control
             if (state.currentScene === 4 && state.qPressed) {
-                particles.rotation.y *= 0.88;
-                particles.rotation.x *= 0.88;
-                state.rotationMomentumX = 0;
-                state.rotationMomentumY = 0;
-                controls.enableRotate = false; // Disable mouse rotation
-            } else if (state.currentScene !== 3) {
-                particles.rotation.y += state.rotationMomentumX;
-                particles.rotation.x += state.rotationMomentumY;
-                controls.enableRotate = true; // Re-enable mouse rotation
+                particles.rotation.y *= 0.88; particles.rotation.x *= 0.88;
+                state.rotationMomentumX = 0; state.rotationMomentumY = 0;
+                controls.enableRotate = false;
+            } else if (state.currentScene < 5 && state.currentScene !== 3) {
+                particles.rotation.y += state.rotationMomentumX; particles.rotation.x += state.rotationMomentumY;
+                controls.enableRotate = true;
             } else {
-                particles.rotation.y *= 0.93;
-                particles.rotation.x *= 0.93;
+                particles.rotation.y *= 0.93; particles.rotation.x *= 0.93;
                 controls.enableRotate = true;
             }
             state.rotationMomentumX *= 0.95; state.rotationMomentumY *= 0.95;
 
-            // Scene 4 Movement & Orientation
+            // Scene 4 Movement Logic
             if (state.currentScene === 4) {
                 const delta = audioAvg - state.prevAudioAvg;
                 if (delta > 0.05 || (audioAvg > 0.45 && Math.random() > 0.97)) {
@@ -256,31 +255,19 @@
                         state.jarShatter[rIdx] = 1.0; 
                     }
                 }
-
                 const moveSpeed = 0.5 + audioAvg * 3.0;
-
                 for(let i=0; i<10; i++) {
                     if (state.qPressed) {
-                        const t = elapsed * 0.8; 
-                        const radius = 140;
-                        const angleOffset = (i * Math.PI * 2) / 10;
-                        const targetPos = new THREE.Vector3(
-                            Math.cos(t + angleOffset) * radius,
-                            0, 
-                            Math.sin(t + angleOffset) * radius
-                        );
+                        const t = elapsed * 0.4; const radius = 140; const angleOffset = (i * Math.PI * 2) / 10;
+                        const targetPos = new THREE.Vector3(Math.cos(t + angleOffset) * radius, 0, Math.sin(t + angleOffset) * radius);
                         state.jarOffsets[i].lerp(targetPos, 0.05);
-                        
-                        state.jarRotations[i].x *= 0.88;
-                        state.jarRotations[i].y *= 0.88;
-                        state.jarRotations[i].z *= 0.88;
+                        state.jarRotations[i].x *= 0.88; state.jarRotations[i].y *= 0.88; state.jarRotations[i].z *= 0.88;
                     } else {
                         const step = state.jarVelocities[i].clone().multiplyScalar(moveSpeed);
                         state.jarOffsets[i].add(step);
                         if (Math.abs(state.jarOffsets[i].x) > 200) state.jarVelocities[i].x *= -1;
                         if (Math.abs(state.jarOffsets[i].y) > 120) state.jarVelocities[i].y *= -1;
                         if (Math.abs(state.jarOffsets[i].z) > 100) state.jarVelocities[i].z *= -1;
-
                         const spinBoost = 0.5 + audioAvg * 2.0;
                         state.jarRotations[i].x += state.jarSpinSpeeds[i].x * spinBoost;
                         state.jarRotations[i].y += state.jarSpinSpeeds[i].y * spinBoost;
@@ -288,9 +275,31 @@
                     }
                 }
             }
+            
             state.prevAudioAvg = audioAvg;
-
             const posArr = geometry.attributes.position.array, colArr = geometry.attributes.color.array, perJar = Math.floor(mainCount / shapeList.length);
+
+            // Scene 5 Calculation Scope
+            let s5Progress = 0, s5DynamicScale = 2.8, s5ColFactor = 0;
+            if (state.currentScene === 5) {
+                const s5Elapsed = elapsed - 320;
+                s5Progress = Math.min(s5Elapsed / 88, 1.0);
+                s5ColFactor = THREE.MathUtils.smoothstep(s5Elapsed, 5.0, 18.0); 
+
+                if (s5Elapsed < 22) { 
+                    state.visibleCount = 9; s5DynamicScale = 2.8; 
+                    for(let i=0; i<9; i++) state.jarOffsets[i].lerp(new THREE.Vector3((i%3-1)*105, (Math.floor(i/3)-1)*115, 0), 0.025);
+                } else if (s5Elapsed < 44) { 
+                    state.visibleCount = 4; s5DynamicScale = 3.8; 
+                    for(let i=0; i<4; i++) state.jarOffsets[i].lerp(new THREE.Vector3((i%2-0.5)*155, (Math.floor(i/2)-0.5)*165, 0), 0.05);
+                } else if (s5Elapsed < 66) { 
+                    state.visibleCount = 2; s5DynamicScale = 5.2; 
+                    state.jarOffsets[0].lerp(new THREE.Vector3(-105, 0, 0), 0.05); state.jarOffsets[1].lerp(new THREE.Vector3(105, 0, 0), 0.05);
+                } else { 
+                    state.visibleCount = 1; s5DynamicScale = 6.8; 
+                    state.jarOffsets[0].lerp(new THREE.Vector3(0, 0, 0), 0.05);
+                }
+            }
 
             for (let i = 0; i < mainCount; i++) {
                 const i3 = i * 3, jarIdx = Math.floor(i / perJar);
@@ -308,10 +317,7 @@
                     const w = state.currentWeights[jarIdx];
                     if (i % perJar === 0) state.currentWeights[jarIdx] += (state.targetWeights[jarIdx] - state.currentWeights[jarIdx]) * 0.05;
                     const driftPower = audioAvg * 20 * w;
-                    bx += Math.sin(elapsed * 4 + jarIdx) * driftPower;
-                    by += Math.cos(elapsed * 3.5 + jarIdx) * driftPower;
-                    bz += Math.sin(elapsed * 4.2 + jarIdx) * driftPower;
-
+                    bx += Math.sin(elapsed * 4 + jarIdx) * driftPower; by += Math.cos(elapsed * 3.5 + jarIdx) * driftPower; bz += Math.sin(elapsed * 4.2 + jarIdx) * driftPower;
                     if (state.currentScene === 3) {
                         if (i % perJar === 0) {
                             const torque = audioAvg * 0.15 * w;
@@ -337,7 +343,6 @@
                     scaledV.multiplyScalar(1.0 + audioAvg * 0.3);
                     scaledV.applyEuler(state.jarRotations[jarIdx]);
                     bx = scaledV.x; by = scaledV.y; bz = scaledV.z;
-
                     const shatter = state.jarShatter[jarIdx];
                     if (shatter > 0.01) {
                         const shardId = Math.floor(i / 180); 
@@ -345,11 +350,43 @@
                         bx += shardOff.x; by += shardOff.y; bz += shardOff.z;
                         if (i % perJar === 0) state.jarShatter[jarIdx] *= 0.82;
                     }
-
                     const cTime = elapsed * 0.3 + jarIdx * 0.5;
                     const tempCol = s4Colors[0].clone().lerp(s4Colors[1], (Math.sin(cTime)+1)/2);
                     colArr[i3] = tempCol.r + audioAvg; colArr[i3+1] = tempCol.g; colArr[i3+2] = tempCol.b;
                     bloomPass.strength = 1.2 + audioAvg * 3.5;
+                }
+                else if (state.currentScene === 5) {
+                    const sluggishAudio = audioAvg * (1.0 - s5Progress * 0.85);
+                    const finalScale = s5DynamicScale * (1.0 + sluggishAudio * 0.12);
+                    
+                    // 【微调】：降低粒子“噪点”感，减小散开强度并平滑随机函数
+                    const dissipation = Math.pow(s5Progress, 2.5) * 38.0; 
+                    bx = bx * finalScale + (Math.sin(i * 0.01) * dissipation);
+                    by = by * finalScale + (Math.cos(i * 0.012) * dissipation);
+                    bz = bz * finalScale + (Math.sin(i * 0.008) * dissipation);
+
+                    const cTimeS4 = elapsed * 0.3 + jarIdx * 0.5;
+                    const colS4 = s4Colors[0].clone().lerp(s4Colors[1], (Math.sin(cTimeS4)+1)/2);
+                    const colS1 = new THREE.Color(0x00f2ff);
+                    const baseCol = colS4.clone().lerp(colS1, s5ColFactor);
+                    
+                    const freqSubtlety = (analyser.getFrequencyData()[jarIdx*2] || 0) / 255 * 0.1;
+                    const fadeDarken = 1.0 - Math.pow(s5Progress, 3.5);
+                    colArr[i3] = (baseCol.r + freqSubtlety) * 1.8 * fadeDarken; 
+                    colArr[i3+1] = (baseCol.g + freqSubtlety) * 1.8 * fadeDarken;
+                    colArr[i3+2] = (baseCol.b + freqSubtlety) * 2.2 * fadeDarken;
+
+                    if (elapsed >= 408.0) {
+                        material.opacity = 0; state.visibleCount = 0; bloomPass.strength = 0;
+                        renderer.setClearColor(0x000000, 1);
+                    } else if (elapsed > 407.2) {
+                        const flash = Math.sin((elapsed - 407.2) * 18.0);
+                        material.opacity = Math.max(0, 1.0 - (elapsed - 407.2) * 2.5);
+                        bloomPass.strength = 0.5 + Math.abs(flash) * 10.0;
+                    } else {
+                        bloomPass.strength = 1.2 * (1.0 - s5Progress);
+                        material.opacity = 1.0;
+                    }
                 }
 
                 posArr[i3] += (bx + off.x - posArr[i3]) * 0.16;
@@ -368,21 +405,14 @@
                     const lm = results.multiHandLandmarks[0];
                     const pinchDist = Math.hypot(lm[8].x - lm[4].x, lm[8].y - lm[4].y);
                     state.pinchStrength = THREE.MathUtils.smoothstep(0.22 - pinchDist, 0, 0.16);
-                    
-                    // Unified Field Blocking: Force-ignore gestures in S4 Unified Field
-                    const isS4Unified = state.currentScene === 4 && state.qPressed;
-                    
                     if (state.currentScene === 3) {
                         if (state.pinchStrength > 0.45) state.isReadyToShuffle = true;
                         else if (state.isReadyToShuffle && state.pinchStrength < 0.15) { reshuffleGrid(); state.isReadyToShuffle = false; }
                     }
-                    
-                    // Skip any view rotation increment if Q is held in S4
-                    if (!isS4Unified && state.currentScene !== 3 && state.prevHandX !== null) {
+                    if (!(state.currentScene === 4 && state.qPressed) && state.currentScene !== 3 && state.currentScene < 5 && state.prevHandX !== null) {
                         state.rotationMomentumX += (lm[9].x - state.prevHandX) * -0.4;
                         state.rotationMomentumY += (lm[9].y - state.prevHandY) * -0.2;
                     }
-                    
                     state.prevHandX = lm[9].x; state.prevHandY = lm[9].y;
                 } else { state.pinchStrength = 0; state.prevHandX = null; state.prevHandY = null; state.isReadyToShuffle = false; }
             });
