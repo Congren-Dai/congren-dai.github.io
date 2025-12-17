@@ -18,7 +18,7 @@
             --mode-scene: #00f2ff;
         }
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; color: white; user-select: none; }
-        #canvas-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        #canvas-container { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; display: block; }
         #ui-layer { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
         .panel { pointer-events: auto; background: var(--bg-panel); backdrop-filter: blur(25px); border: 1px solid var(--border); border-radius: 16px; padding: 24px; position: absolute; }
         .left-panel { top: 20px; left: 20px; width: 300px; box-shadow: 0 10px 50px #000; }
@@ -29,6 +29,11 @@
         .cam-box { position: fixed; bottom: 20px; right: 20px; width: 180px; height: 135px; background: black; border-radius: 12px; border: 1px solid var(--border); z-index: 20; opacity: 0.4; }
         #time-info { position: absolute; bottom: 30px; left: 30px; font-family: 'Courier New', monospace; color: var(--accent); font-size: 1.8rem; font-weight: bold; }
         .key-hint { color: var(--accent); font-weight: bold; background: rgba(255, 255, 255, 0.1); padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; }
+
+        /* Fullscreen styles */
+        .fullscreen-active #ui-layer, 
+        .fullscreen-active .cam-box { display: none !important; }
+        .fullscreen-active { cursor: none; }
     </style>
     
     <script type="importmap">
@@ -46,6 +51,7 @@
                 <div style="margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px;">
                     <span class="key-hint">1-5</span> Scene Selection<br>
                     <span class="key-hint">Q</span> Hold for Level Circle (S4)<br>
+                    <span class="key-hint">F</span> Toggle Fullscreen Mode<br>
                     <span id="pinch-label" style="color:#00f2ff; font-weight: bold; font-size: 0.8rem;">PINCH TO CONTROL GRID</span>
                 </div>
             </div>
@@ -73,7 +79,6 @@
             lastSwitchTime: 0,
             jarTilts: Array(10).fill().map(() => new THREE.Vector3()), 
             jarAngVelocities: Array(10).fill().map(() => new THREE.Vector3()), 
-            // Scene 4 Logic
             jarShatter: Array(10).fill(0),
             jarVelocities: Array(10).fill().map(() => new THREE.Vector3()),
             jarBaseScales: Array(10).fill(1),
@@ -103,8 +108,9 @@
         function init() {
             const container = document.getElementById('canvas-container');
             scene = new THREE.Scene();
+            
             camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 4000);
-            camera.position.set(0, 20, 280);
+            camera.position.set(0, 0, 320); // Move back slightly for better centering
 
             renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -117,6 +123,7 @@
             composer.addPass(bloomPass);
 
             controls = new OrbitControls(camera, renderer.domElement);
+            controls.target.set(0, 0, 0); // Force rotation target to center
             controls.enableDamping = true;
 
             const listener = new THREE.AudioListener();
@@ -128,7 +135,17 @@
             setupUI();
             setupKeyboard();
             startHandTracking();
+            
+            window.addEventListener('resize', onWindowResize);
             animate();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+            bloomPass.setSize(window.innerWidth, window.innerHeight);
         }
 
         function initParticles() {
@@ -231,7 +248,6 @@
                 if (elapsed - state.lastSwitchTime > 4.2) { pickRandomJars(); state.lastSwitchTime = elapsed; }
             }
 
-            // Global View Control
             if (state.currentScene === 4 && state.qPressed) {
                 particles.rotation.y *= 0.88; particles.rotation.x *= 0.88;
                 state.rotationMomentumX = 0; state.rotationMomentumY = 0;
@@ -245,7 +261,6 @@
             }
             state.rotationMomentumX *= 0.95; state.rotationMomentumY *= 0.95;
 
-            // Scene 4 Movement Logic
             if (state.currentScene === 4) {
                 const delta = audioAvg - state.prevAudioAvg;
                 if (delta > 0.05 || (audioAvg > 0.45 && Math.random() > 0.97)) {
@@ -279,7 +294,6 @@
             state.prevAudioAvg = audioAvg;
             const posArr = geometry.attributes.position.array, colArr = geometry.attributes.color.array, perJar = Math.floor(mainCount / shapeList.length);
 
-            // Scene 5 Calculation Scope
             let s5Progress = 0, s5DynamicScale = 2.8, s5ColFactor = 0;
             if (state.currentScene === 5) {
                 const s5Elapsed = elapsed - 320;
@@ -358,24 +372,19 @@
                 else if (state.currentScene === 5) {
                     const sluggishAudio = audioAvg * (1.0 - s5Progress * 0.85);
                     const finalScale = s5DynamicScale * (1.0 + sluggishAudio * 0.12);
-                    
-                    // 【微调】：降低粒子“噪点”感，减小散开强度并平滑随机函数
                     const dissipation = Math.pow(s5Progress, 2.5) * 38.0; 
                     bx = bx * finalScale + (Math.sin(i * 0.01) * dissipation);
                     by = by * finalScale + (Math.cos(i * 0.012) * dissipation);
                     bz = bz * finalScale + (Math.sin(i * 0.008) * dissipation);
-
                     const cTimeS4 = elapsed * 0.3 + jarIdx * 0.5;
                     const colS4 = s4Colors[0].clone().lerp(s4Colors[1], (Math.sin(cTimeS4)+1)/2);
                     const colS1 = new THREE.Color(0x00f2ff);
                     const baseCol = colS4.clone().lerp(colS1, s5ColFactor);
-                    
                     const freqSubtlety = (analyser.getFrequencyData()[jarIdx*2] || 0) / 255 * 0.1;
                     const fadeDarken = 1.0 - Math.pow(s5Progress, 3.5);
                     colArr[i3] = (baseCol.r + freqSubtlety) * 1.8 * fadeDarken; 
                     colArr[i3+1] = (baseCol.g + freqSubtlety) * 1.8 * fadeDarken;
                     colArr[i3+2] = (baseCol.b + freqSubtlety) * 2.2 * fadeDarken;
-
                     if (elapsed >= 408.0) {
                         material.opacity = 0; state.visibleCount = 0; bloomPass.strength = 0;
                         renderer.setClearColor(0x000000, 1);
@@ -424,9 +433,28 @@
             window.addEventListener('keydown', (e) => { 
                 if (e.key >= '1' && e.key <= '5') triggerScene(parseInt(e.key)); 
                 if (e.key.toLowerCase() === 'q') state.qPressed = true;
+                if (e.key.toLowerCase() === 'f') {
+                    if (!document.fullscreenElement) {
+                        document.documentElement.requestFullscreen().then(() => {
+                            setTimeout(onWindowResize, 100);
+                        });
+                        document.body.classList.add('fullscreen-active');
+                    } else {
+                        if (document.exitFullscreen) {
+                            document.exitFullscreen().then(() => {
+                                setTimeout(onWindowResize, 100);
+                            });
+                            document.body.classList.remove('fullscreen-active');
+                        }
+                    }
+                }
             }); 
             window.addEventListener('keyup', (e) => {
                 if (e.key.toLowerCase() === 'q') state.qPressed = false;
+            });
+            document.addEventListener('fullscreenchange', () => {
+                if (!document.fullscreenElement) document.body.classList.remove('fullscreen-active');
+                setTimeout(onWindowResize, 100);
             });
         }
         function setupUI() {
