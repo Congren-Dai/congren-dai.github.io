@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Living Pottery - Scene 2 & 3 Dual Logic</title>
+    <title>Living Pottery - Refined Shatter Performance</title>
     
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
@@ -45,6 +45,7 @@
                 <span id="scene-desc">Initialising...</span>
                 <div style="margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px;">
                     <span class="key-hint">1-5</span> Scene Selection<br>
+                    <span class="key-hint">Q</span> Hold for Field (S4)<br>
                     <span id="pinch-label" style="color:#00f2ff; font-weight: bold; font-size: 0.8rem;">PINCH TO CONTROL GRID</span>
                 </div>
             </div>
@@ -70,14 +71,12 @@
             targetWeights: Array(10).fill(0),   
             currentWeights: Array(10).fill(0),  
             lastSwitchTime: 0,
-            // Scene 3 logic: Angular deviation
             jarTilts: Array(10).fill().map(() => new THREE.Vector3()), 
             jarAngVelocities: Array(10).fill().map(() => new THREE.Vector3()), 
-            // Scene 4 logic: Shattering
             jarShatter: Array(10).fill(0),
             jarVelocities: Array(10).fill().map(() => new THREE.Vector3()),
-            fieldInfluence: 0, sustainedEnergy: 0,
-            // Interaction
+            jarBaseScales: Array(10).fill(1),
+            qPressed: false, 
             pinchStrength: 0, isReadyToShuffle: false,
             audioIsReady: false, prevAudioAvg: 0,
             prevHandX: null, prevHandY: null, rotationMomentumX: 0, rotationMomentumY: 0
@@ -85,14 +84,15 @@
 
         const timeline = [
             { id: 1, start: 0, end: 70, name: "ENERGY INFUSION", desc: "Single Massive Response" },
-            { id: 2, start: 70, end: 130, name: "SELECTIVE BREAKOUT", desc: "Random 1-2 Jars Drift Displacement" },
-            { id: 3, start: 130, end: 200, name: "SYSTEM IMBALANCE", desc: "Random 1-2 Jars Angular Deviation" },
-            { id: 4, start: 200, end: 320, name: "DYNAMIC SYNC FIELD", desc: "Shatter & Unified Field" },
+            { id: 2, start: 70, end: 130, name: "SELECTIVE BREAKOUT", desc: "Selective Displacement" },
+            { id: 3, start: 130, end: 200, name: "SYSTEM IMBALANCE", desc: "Angular Instability" },
+            { id: 4, start: 200, end: 320, name: "DYNAMIC SYNC FIELD", desc: "Hold Q for Unified Field" },
             { id: 5, start: 320, end: 9999, name: "CONCLUSION", desc: "Silence" }
         ];
 
         let scene, camera, renderer, composer, bloomPass, controls, particles, geometry, material, basePositions, audio, analyser, isPlaying = false;
         const mainCount = 130000, shapeList = ['classic', 'wine', 'modern', 'ripple', 'ginger', 'amphora', 'bowl', 'budvase', 'conical', 'stacked'];
+        const s4Colors = [new THREE.Color(0xffaa00), new THREE.Color(0x00f2ff)];
 
         init();
 
@@ -166,13 +166,12 @@
             for(let i=0; i<6; i++) state.jarOffsets[i].copy(slots[i]);
         }
 
-        // Shared Random 1-2 Jars Selection Logic for Scene 2 & 3
         function pickRandomJars() {
             state.targetWeights.fill(0);
             let selected = 0;
-            const targetCount = Math.floor(Math.random() * 2) + 1; // Pick 1 or 2 jars
+            const targetCount = Math.floor(Math.random() * 2) + 1; 
             while(selected < targetCount) {
-                const idx = Math.floor(Math.random() * 6); // Visible range for S2/S3
+                const idx = Math.floor(Math.random() * 6); 
                 if(state.targetWeights[idx] === 0) {
                     state.targetWeights[idx] = 1;
                     selected++;
@@ -201,7 +200,11 @@
                 pickRandomJars();
             } else if (id === 4) {
                 state.visibleCount = 10;
-                for(let i=0; i<10; i++) state.jarVelocities[i].set((Math.random()-0.5)*2, (Math.random()-0.5)*2, (Math.random()-0.5)*2);
+                for(let i=0; i<10; i++) {
+                    state.jarOffsets[i].set((Math.random()-0.5)*180, (Math.random()-0.5)*100, 0);
+                    state.jarVelocities[i].set((Math.random()-0.5), (Math.random()-0.5), (Math.random()-0.5)).normalize().multiplyScalar(0.4);
+                    state.jarBaseScales[i] = 1.0 + Math.random() * 0.4;
+                }
             }
         }
 
@@ -218,15 +221,10 @@
 
             let audioAvg = isPlaying ? analyser.getAverageFrequency() / 255 : 0;
 
-            // Shared Switching Trigger for Scene 2 and 3
             if ((state.currentScene === 2 || state.currentScene === 3) && isPlaying) {
-                if (elapsed - state.lastSwitchTime > 4.2) { 
-                    pickRandomJars(); 
-                    state.lastSwitchTime = elapsed; 
-                }
+                if (elapsed - state.lastSwitchTime > 4.2) { pickRandomJars(); state.lastSwitchTime = elapsed; }
             }
 
-            // Global Rotation and momentum decay
             if (state.currentScene !== 3) {
                 particles.rotation.y += state.rotationMomentumX; particles.rotation.x += state.rotationMomentumY;
             } else {
@@ -234,14 +232,33 @@
             }
             state.rotationMomentumX *= 0.95; state.rotationMomentumY *= 0.95;
 
-            // Scene 4 shattering logic
+            // Scene 4 Movement Logic - Refined Shatter
             if (state.currentScene === 4) {
                 const delta = audioAvg - state.prevAudioAvg;
-                if (audioAvg > 0.4) state.sustainedEnergy += 0.012; else state.sustainedEnergy *= 0.985;
-                state.fieldInfluence = THREE.MathUtils.lerp(state.fieldInfluence, THREE.MathUtils.clamp(state.sustainedEnergy * 0.4, 0, 1), 0.05);
-                if (delta > 0.12 && state.fieldInfluence < 0.7) {
-                    const rIdx = Math.floor(Math.random() * 10);
-                    state.jarShatter[rIdx] = 1.3;
+                
+                // High frequency trigger, but lower impact
+                if (delta > 0.05 || (audioAvg > 0.45 && Math.random() > 0.97)) {
+                    const count = Math.floor(Math.random() * 2) + 1; 
+                    for(let k=0; k<count; k++) {
+                        const rIdx = Math.floor(Math.random() * 10);
+                        state.jarShatter[rIdx] = 1.0; // Reduced from 1.8
+                    }
+                }
+
+                const moveSpeed = 0.1 + audioAvg * 3.0;
+
+                for(let i=0; i<10; i++) {
+                    if (state.qPressed) {
+                        const t = elapsed * 0.8; 
+                        const targetPos = new THREE.Vector3(Math.sin(t+i)*110, Math.cos(t*0.7+i)*90, Math.sin(t*0.4+i)*50);
+                        state.jarOffsets[i].lerp(targetPos, 0.05);
+                    } else {
+                        const step = state.jarVelocities[i].clone().multiplyScalar(moveSpeed);
+                        state.jarOffsets[i].add(step);
+                        if (Math.abs(state.jarOffsets[i].x) > 200) state.jarVelocities[i].x *= -1;
+                        if (Math.abs(state.jarOffsets[i].y) > 120) state.jarVelocities[i].y *= -1;
+                        if (Math.abs(state.jarOffsets[i].z) > 100) state.jarVelocities[i].z *= -1;
+                    }
                 }
             }
             state.prevAudioAvg = audioAvg;
@@ -263,58 +280,48 @@
                 else if (state.currentScene === 2 || state.currentScene === 3) {
                     const w = state.currentWeights[jarIdx];
                     if (i % perJar === 0) state.currentWeights[jarIdx] += (state.targetWeights[jarIdx] - state.currentWeights[jarIdx]) * 0.05;
-
-                    // Positional Drift (Shared across S2 and S3 for displacement)
                     const driftPower = audioAvg * 20 * w;
                     bx += Math.sin(elapsed * 4 + jarIdx) * driftPower;
                     by += Math.cos(elapsed * 3.5 + jarIdx) * driftPower;
                     bz += Math.sin(elapsed * 4.2 + jarIdx) * driftPower;
 
                     if (state.currentScene === 3) {
-                        // Angular Instability Logic (Persistent Deviation)
                         if (i % perJar === 0) {
                             const torque = audioAvg * 0.15 * w;
-                            // Add noise/torque to angular velocities
                             state.jarAngVelocities[jarIdx].x += (Math.random() - 0.5) * torque;
                             state.jarAngVelocities[jarIdx].z += (Math.random() - 0.5) * torque;
-                            
-                            // Integrate velocity into tilt
                             state.jarTilts[jarIdx].add(state.jarAngVelocities[jarIdx]);
-                            
-                            // Apply physical dampening and very weak restoring spring
                             state.jarAngVelocities[jarIdx].add(state.jarTilts[jarIdx].clone().multiplyScalar(-0.006));
                             state.jarAngVelocities[jarIdx].multiplyScalar(0.95);
-                            state.jarTilts[jarIdx].multiplyScalar(0.996); // Very slow return to vertical
+                            state.jarTilts[jarIdx].multiplyScalar(0.996);
                         }
-                        
-                        // Rotate based on persistent tilts
                         const tempV = new THREE.Vector3(bx, by, bz);
                         tempV.applyEuler(new THREE.Euler(state.jarTilts[jarIdx].x, 0, state.jarTilts[jarIdx].z));
                         bx = tempV.x; by = tempV.y; bz = tempV.z;
-
-                        // Pinch response
                         off.lerp(new THREE.Vector3(0,0,0), state.pinchStrength);
                     }
-
                     const scale = 2.7; bx *= scale; by *= scale; bz *= scale;
                     colArr[i3] = 0.4 + audioAvg; colArr[i3+1] = 0.5; colArr[i3+2] = 1.0;
                     bloomPass.strength = 1.2 + audioAvg * 3.5;
                 }
                 else if (state.currentScene === 4) {
-                    const scale = 3.0; bx *= scale; by *= scale; bz *= scale;
+                    const baseS = 2.8 * state.jarBaseScales[jarIdx];
+                    bx *= baseS * (1+audioAvg*0.3); by *= baseS * (1+audioAvg*0.3); bz *= baseS * (1+audioAvg*0.3);
+
                     const shatter = state.jarShatter[jarIdx];
                     if (shatter > 0.01) {
-                        const sOff = new THREE.Vector3(Math.sin(i), Math.cos(i*1.1), Math.sin(i*0.9)).multiplyScalar(shatter * 50);
-                        bx += sOff.x; by += sOff.y; bz += sOff.z;
-                        if (i % perJar === 0) state.jarShatter[jarIdx] *= 0.94;
+                        const shardId = Math.floor(i / 180); 
+                        // Reduced dispersion multiplier from 50 to 20
+                        const shardOff = new THREE.Vector3(Math.sin(shardId), Math.cos(shardId*1.2), Math.sin(shardId*0.8)).multiplyScalar(shatter * 20);
+                        bx += shardOff.x; by += shardOff.y; bz += shardOff.z;
+                        // Faster decay from 0.93 to 0.82
+                        if (i % perJar === 0) state.jarShatter[jarIdx] *= 0.82;
                     }
-                    if (state.fieldInfluence > 0.7) {
-                        const t = elapsed * 1.5;
-                        state.jarOffsets[jarIdx].lerp(new THREE.Vector3(Math.sin(t+jarIdx)*110, Math.cos(t*0.7+jarIdx)*110, Math.sin(t*0.4+jarIdx)*70), 0.04);
-                    } else {
-                        state.jarOffsets[jarIdx].add(state.jarVelocities[jarIdx]);
-                        if (state.jarOffsets[jarIdx].length() > 200) state.jarVelocities[jarIdx].reflect(state.jarOffsets[jarIdx].clone().normalize());
-                    }
+
+                    const cTime = elapsed * 0.3 + jarIdx * 0.5;
+                    const tempCol = s4Colors[0].clone().lerp(s4Colors[1], (Math.sin(cTime)+1)/2);
+                    colArr[i3] = tempCol.r + audioAvg; colArr[i3+1] = tempCol.g; colArr[i3+2] = tempCol.b;
+                    bloomPass.strength = 1.2 + audioAvg * 3.5;
                 }
 
                 posArr[i3] += (bx + off.x - posArr[i3]) * 0.16;
@@ -348,7 +355,15 @@
             cam.start();
         }
 
-        function setupKeyboard() { window.addEventListener('keydown', (e) => { if (e.key >= '1' && e.key <= '5') triggerScene(parseInt(e.key)); }); }
+        function setupKeyboard() { 
+            window.addEventListener('keydown', (e) => { 
+                if (e.key >= '1' && e.key <= '5') triggerScene(parseInt(e.key)); 
+                if (e.key.toLowerCase() === 'q') state.qPressed = true;
+            }); 
+            window.addEventListener('keyup', (e) => {
+                if (e.key.toLowerCase() === 'q') state.qPressed = false;
+            });
+        }
         function setupUI() {
             document.getElementById('audio-file').onchange = (e) => {
                 const reader = new FileReader();
