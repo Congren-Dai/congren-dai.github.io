@@ -29,9 +29,7 @@
         .cam-box { position: fixed; bottom: 20px; right: 20px; width: 180px; height: 135px; background: black; border-radius: 12px; border: 1px solid var(--border); z-index: 20; opacity: 0.4; }
         #time-info { position: absolute; bottom: 30px; left: 30px; font-family: 'Courier New', monospace; color: var(--accent); font-size: 1.8rem; font-weight: bold; }
         .key-hint { color: var(--accent); font-weight: bold; background: rgba(255, 255, 255, 0.1); padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; }
-
-        .fullscreen-active #ui-layer, 
-        .fullscreen-active .cam-box { display: none !important; }
+        .fullscreen-active #ui-layer, .fullscreen-active .cam-box { display: none !important; }
         .fullscreen-active { cursor: none; }
     </style>
     
@@ -90,22 +88,47 @@
         };
 
         const timeline = [
-            { id: 1, start: 0, end: 70, name: "ENERGY INFUSION", desc: "Single Massive Response" },
-            { id: 2, start: 70, end: 130, name: "SELECTIVE BREAKOUT", desc: "Selective Displacement" },
+            { id: 1, start: 0, end: 70, name: "ENERGY INFUSION", desc: "Single Massive Jar Response" },
+            { id: 2, start: 70, end: 130, name: "SELECTIVE BREAKOUT", desc: "Redistributed Displacement" },
             { id: 3, start: 130, end: 200, name: "SYSTEM IMBALANCE", desc: "Angular Instability" },
             { id: 4, start: 200, end: 320, name: "DYNAMIC SYNC FIELD", desc: "Lock View & Horizontal Circle" },
             { id: 5, start: 320, end: 408, name: "RESIDUAL DISSIPATION", desc: "Energy Exhaustion & Residual Impression" },
             { id: 6, start: 408, end: 9999, name: "VOID", desc: "Total Silence" }
         ];
 
-        let scene, camera, renderer, composer, bloomPass, controls, particles, geometry, material, basePositions, audio, analyser, isPlaying = false;
+        let scene, camera, renderer, composer, bloomPass, controls, particles, geometry, material, basePositions, particleParams, audio, analyser, isPlaying = false;
         const mainCount = 130000;
-        
-        // Jar 1 updated to 'generaljar'
         const shapeList = ['generaljar', 'yuhuchun', 'tianqiu', 'cong', 'garlic', 'moonflask', 'meiping', 'gu', 'malan', 'zun'];
         const s4Colors = [new THREE.Color(0xffaa00), new THREE.Color(0x00f2ff)];
 
         init();
+
+        function getJarPoint(shape, theta, h) {
+            let r;
+            const targetH = 20;
+            switch(shape) {
+                case 'generaljar': {
+                    const s = 1.25; const localH = h / s;
+                    if (localH > 6) r = (2.0 + Math.cos((localH - 7) * 1.5) * 1.8) * s;
+                    else if (localH > 4) r = 2.2 * s;
+                    else { let normH = (localH + 8) / 12; r = (2.5 + 5.0 * Math.sin(normH * Math.PI * 0.7)) * s; }
+                    break;
+                }
+                case 'meiping': r = (h < 5) ? 5.5 * Math.cos(h * 0.12) : 5.5 * Math.cos(5 * 0.12) * Math.exp(-(h-5)*0.5); break;
+                case 'yuhuchun': { const s = 20 / 22; const localH = h / s; r = ((localH < -2) ? 6 * Math.cos((localH+6)*0.15) : 1.5 + 4.5 * Math.exp(-(localH+2)*0.3)) * s; break; }
+                case 'tianqiu': r = (h < 2) ? Math.sqrt(Math.max(0, 64 - Math.pow(h+4, 2))) : 1.8; break;
+                case 'cong': { const side = 4.5; r = side / Math.max(Math.abs(Math.cos(theta)), Math.abs(Math.sin(theta))); if (h > 8 || h < -8) r *= 0.8; break; }
+                case 'garlic': { const s = 20 / 24; const localH = h / s; if (localH > 9) r = (2.5 * Math.cos((localH-10))) * s; else if (localH > 0) r = 1.2 * s; else r = (5.5 * Math.cos((localH+4)*0.18)) * s; break; }
+                case 'moonflask': { const s = 20 / 18; const localH = h / s; let rad = (localH < 4) ? Math.sqrt(Math.max(0, 49 - Math.pow(localH+2, 2))) : 1.5; let thickness = 0.4 + 0.6 * Math.abs(Math.sin(theta)); r = rad * thickness * s; break; }
+                case 'gu': { const s = 20 / 18; const localH = h / s; r = (2.0 + Math.pow(Math.abs(localH)/10, 2.5) * 2.5) * s; break; }
+                case 'malan': r = (h > 2) ? 1.2 : 5.5 * Math.exp(-(Math.pow(h+5, 2))/40); break;
+                case 'zun': { const s = 20 / 18; const localH = h / s; r = (4 + 2 * Math.sin(localH * 0.4)) * s; break; }
+                default: r = 5;
+            }
+            const relief = 1 + 0.06 * Math.sin(theta * 12 + h * 0.5) * Math.cos(theta * 8 - h);
+            r *= relief;
+            return { x: r * Math.cos(theta), y: h, z: r * Math.sin(theta) };
+        }
 
         function init() {
             const container = document.getElementById('canvas-container');
@@ -124,7 +147,6 @@
             composer.addPass(bloomPass);
 
             controls = new OrbitControls(camera, renderer.domElement);
-            controls.target.set(0, 0, 0);
             controls.enableDamping = true;
 
             const listener = new THREE.AudioListener();
@@ -153,88 +175,19 @@
             geometry = new THREE.BufferGeometry();
             const pos = new Float32Array(mainCount * 3), col = new Float32Array(mainCount * 3);
             basePositions = new Float32Array(mainCount * 3);
+            particleParams = new Float32Array(mainCount * 2); // Store theta and h
             const perShape = Math.floor(mainCount / shapeList.length);
 
-            // Standardised Height for all jars
-            const targetH = 20;
-
             for (let i = 0; i < mainCount; i++) {
-                const sIdx = Math.floor(i / perShape), shape = shapeList[sIdx];
-                const theta = Math.random() * Math.PI * 2, p = (i % perShape) / perShape;
+                const sIdx = Math.floor(i / perShape);
+                const theta = Math.random() * Math.PI * 2;
+                const h = ((i % perShape) / perShape - 0.5) * 20;
                 
-                // Set h range to exactly [-10, 10]
-                let h = (p - 0.5) * targetH;
-                let r;
-                
-                switch(shape) {
-                    case 'generaljar': {
-                        const s = 1.25; // Original 16 scaled to 20
-                        const localH = h / s;
-                        if (localH > 6) r = (2.0 + Math.cos((localH - 7) * 1.5) * 1.8) * s;
-                        else if (localH > 4) r = 2.2 * s;
-                        else {
-                            let normH = (localH + 8) / 12;
-                            r = (2.5 + 5.0 * Math.sin(normH * Math.PI * 0.7)) * s;
-                        }
-                        break;
-                    }
-                    case 'meiping': 
-                        // Original 20, no scaling needed
-                        r = (h < 5) ? 5.5 * Math.cos(h * 0.12) : 5.5 * Math.cos(5 * 0.12) * Math.exp(-(h-5)*0.5);
-                        break;
-                    case 'yuhuchun': {
-                        const s = 20 / 22;
-                        const localH = h / s;
-                        r = ((localH < -2) ? 6 * Math.cos((localH+6)*0.15) : 1.5 + 4.5 * Math.exp(-(localH+2)*0.3)) * s;
-                        break;
-                    }
-                    case 'tianqiu': 
-                        r = (h < 2) ? Math.sqrt(Math.max(0, 64 - Math.pow(h+4, 2))) : 1.8;
-                        break;
-                    case 'cong': 
-                        const side = 4.5;
-                        r = side / Math.max(Math.abs(Math.cos(theta)), Math.abs(Math.sin(theta)));
-                        if (h > 8 || h < -8) r *= 0.8; 
-                        break;
-                    case 'garlic': {
-                        const s = 20 / 24;
-                        const localH = h / s;
-                        if (localH > 9) r = (2.5 * Math.cos((localH-10))) * s;
-                        else if (localH > 0) r = 1.2 * s;
-                        else r = (5.5 * Math.cos((localH+4)*0.18)) * s;
-                        break;
-                    }
-                    case 'moonflask': {
-                        const s = 20 / 18;
-                        const localH = h / s;
-                        let rad = (localH < 4) ? Math.sqrt(Math.max(0, 49 - Math.pow(localH+2, 2))) : 1.5;
-                        let thickness = 0.4 + 0.6 * Math.abs(Math.sin(theta));
-                        r = rad * thickness * s;
-                        break;
-                    }
-                    case 'gu': {
-                        const s = 20 / 18;
-                        const localH = h / s;
-                        r = (2.0 + Math.pow(Math.abs(localH)/10, 2.5) * 2.5) * s;
-                        break;
-                    }
-                    case 'malan': 
-                        r = (h > 2) ? 1.2 : 5.5 * Math.exp(-(Math.pow(h+5, 2))/40);
-                        break;
-                    case 'zun': {
-                        const s = 20 / 18;
-                        const localH = h / s;
-                        r = (4 + 2 * Math.sin(localH * 0.4)) * s;
-                        break;
-                    }
-                }
+                particleParams[i*2] = theta;
+                particleParams[i*2+1] = h;
 
-                const relief = 1 + 0.06 * Math.sin(theta * 12 + h * 0.5) * Math.cos(theta * 8 - h);
-                r *= relief;
-
-                basePositions[i*3] = r * Math.cos(theta); 
-                basePositions[i*3+1] = h; 
-                basePositions[i*3+2] = r * Math.sin(theta);
+                const pt = getJarPoint(shapeList[sIdx], theta, h);
+                basePositions[i*3] = pt.x; basePositions[i*3+1] = pt.y; basePositions[i*3+2] = pt.z;
             }
             geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
             geometry.setAttribute('color', new THREE.BufferAttribute(col, 3));
@@ -252,14 +205,10 @@
 
         function pickRandomJars() {
             state.targetWeights.fill(0);
-            let selected = 0;
-            const targetCount = Math.floor(Math.random() * 2) + 1; 
+            let selected = 0; const targetCount = Math.floor(Math.random() * 2) + 1; 
             while(selected < targetCount) {
                 const idx = Math.floor(Math.random() * 6); 
-                if(state.targetWeights[idx] === 0) {
-                    state.targetWeights[idx] = 1;
-                    selected++;
-                }
+                if(state.targetWeights[idx] === 0) { state.targetWeights[idx] = 1; selected++; }
             }
         }
 
@@ -330,159 +279,107 @@
                 const delta = audioAvg - state.prevAudioAvg;
                 if (delta > 0.05 || (audioAvg > 0.45 && Math.random() > 0.97)) {
                     const count = Math.floor(Math.random() * 2) + 1; 
-                    for(let k=0; k<count; k++) {
-                        const rIdx = Math.floor(Math.random() * 10);
-                        state.jarShatter[rIdx] = 1.0; 
-                    }
+                    for(let k=0; k<count; k++) { state.jarShatter[Math.floor(Math.random() * 10)] = 1.0; }
                 }
                 const moveSpeed = 0.5 + audioAvg * 3.0;
                 for(let i=0; i<10; i++) {
                     if (state.qPressed) {
                         const t = elapsed * 0.4; const radius = 140; const angleOffset = (i * Math.PI * 2) / 10;
-                        const targetPos = new THREE.Vector3(Math.cos(t + angleOffset) * radius, 0, Math.sin(t + angleOffset) * radius);
-                        state.jarOffsets[i].lerp(targetPos, 0.05);
-                        state.jarRotations[i].x *= 0.88; state.jarRotations[i].y *= 0.88; state.jarRotations[i].z *= 0.88;
+                        state.jarOffsets[i].lerp(new THREE.Vector3(Math.cos(t + angleOffset) * radius, 0, Math.sin(t + angleOffset) * radius), 0.05);
+                        state.jarRotations[i].set(state.jarRotations[i].x*0.88, state.jarRotations[i].y*0.88, state.jarRotations[i].z*0.88);
                     } else {
-                        const step = state.jarVelocities[i].clone().multiplyScalar(moveSpeed);
-                        state.jarOffsets[i].add(step);
+                        state.jarOffsets[i].add(state.jarVelocities[i].clone().multiplyScalar(moveSpeed));
                         if (Math.abs(state.jarOffsets[i].x) > 200) state.jarVelocities[i].x *= -1;
                         if (Math.abs(state.jarOffsets[i].y) > 120) state.jarVelocities[i].y *= -1;
                         if (Math.abs(state.jarOffsets[i].z) > 100) state.jarVelocities[i].z *= -1;
-                        const spinBoost = 0.5 + audioAvg * 2.0;
-                        state.jarRotations[i].x += state.jarSpinSpeeds[i].x * spinBoost;
-                        state.jarRotations[i].y += state.jarSpinSpeeds[i].y * spinBoost;
-                        state.jarRotations[i].z += state.jarSpinSpeeds[i].z * spinBoost;
+                        const sb = 0.5 + audioAvg * 2.0;
+                        state.jarRotations[i].x += state.jarSpinSpeeds[i].x * sb; state.jarRotations[i].y += state.jarSpinSpeeds[i].y * sb; state.jarRotations[i].z += state.jarSpinSpeeds[i].z * sb;
                     }
                 }
             }
             
             state.prevAudioAvg = audioAvg;
-            const posArr = geometry.attributes.position.array, colArr = geometry.attributes.color.array, perJar = Math.floor(mainCount / shapeList.length);
+            const posArr = geometry.attributes.position.array, colArr = geometry.attributes.color.array, perJar = Math.floor(mainCount / 10);
 
             let s5Progress = 0, s5DynamicScale = 2.8, s5ColFactor = 0, s5VisibleIndices = [];
-            
             if (state.currentScene >= 5) {
                 const s5Elapsed = elapsed - 320;
                 s5Progress = Math.min(s5Elapsed / 88, 1.0);
                 s5ColFactor = THREE.MathUtils.smoothstep(s5Elapsed, 5.0, 18.0); 
-
-                if (s5Elapsed < 30) { 
-                    s5VisibleIndices = [0,1,2,3,4,5,6,7,8];
-                    s5DynamicScale = 2.8; 
-                    for(let i=0; i<9; i++) state.jarOffsets[i].lerp(new THREE.Vector3((i%3-1)*105, (Math.floor(i/3)-1)*115, 0), 0.025);
-                } else if (s5Elapsed < 55) { 
-                    s5VisibleIndices = [0,2,6,8];
-                    s5DynamicScale = 3.8; 
-                    state.jarOffsets[0].lerp(new THREE.Vector3(-80, -80, 0), 0.04);
-                    state.jarOffsets[2].lerp(new THREE.Vector3(80, -80, 0), 0.04);
-                    state.jarOffsets[6].lerp(new THREE.Vector3(-80, 80, 0), 0.04);
-                    state.jarOffsets[8].lerp(new THREE.Vector3(80, 80, 0), 0.04);
-                } else if (s5Elapsed < 75) { 
-                    s5VisibleIndices = [0,8];
-                    s5DynamicScale = 5.2; 
-                    state.jarOffsets[0].lerp(new THREE.Vector3(-105, 0, 0), 0.05); 
-                    state.jarOffsets[8].lerp(new THREE.Vector3(105, 0, 0), 0.05);
-                } else { 
-                    s5VisibleIndices = [0];
-                    s5DynamicScale = 6.8; 
-                    state.jarOffsets[0].lerp(new THREE.Vector3(0, 0, 0), 0.05);
-                }
+                if (s5Elapsed < 30) { s5VisibleIndices = [0,1,2,3,4,5,6,7,8]; s5DynamicScale = 2.8; for(let i=0; i<9; i++) state.jarOffsets[i].lerp(new THREE.Vector3((i%3-1)*105, (Math.floor(i/3)-1)*115, 0), 0.025); }
+                else if (s5Elapsed < 55) { s5VisibleIndices = [0,2,6,8]; s5DynamicScale = 3.8; state.jarOffsets[0].lerp(new THREE.Vector3(-80, -80, 0), 0.04); state.jarOffsets[2].lerp(new THREE.Vector3(80, -80, 0), 0.04); state.jarOffsets[6].lerp(new THREE.Vector3(-80, 80, 0), 0.04); state.jarOffsets[8].lerp(new THREE.Vector3(80, 80, 0), 0.04); }
+                else if (s5Elapsed < 75) { s5VisibleIndices = [0,8]; s5DynamicScale = 5.2; state.jarOffsets[0].lerp(new THREE.Vector3(-105, 0, 0), 0.05); state.jarOffsets[8].lerp(new THREE.Vector3(105, 0, 0), 0.05); }
+                else { s5VisibleIndices = [0]; s5DynamicScale = 6.8; state.jarOffsets[0].lerp(new THREE.Vector3(0, 0, 0), 0.05); }
             }
 
             for (let i = 0; i < mainCount; i++) {
                 const i3 = i * 3, jarIdx = Math.floor(i / perJar);
-                
                 if (state.currentScene >= 5) {
-                    if (elapsed >= 408.0) {
-                        posArr[i3+1] = -5000; 
-                        if (i === 0) {
-                            material.opacity = 0; 
-                            bloomPass.strength = 0;
-                            renderer.setClearColor(0x000000, 1);
-                            document.getElementById('ui-layer').style.opacity = "0";
-                        }
-                        continue; 
-                    }
+                    if (elapsed >= 408.0) { posArr[i3+1] = -5000; if (i === 0) { material.opacity = 0; bloomPass.strength = 0; renderer.setClearColor(0x000000, 1); document.getElementById('ui-layer').style.opacity = "0"; } continue; }
                     if (!s5VisibleIndices.includes(jarIdx)) { posArr[i3+1] = -5000; continue; }
-                } else if (jarIdx >= state.visibleCount) { 
-                    posArr[i3+1] = -5000; continue; 
-                }
+                } else if (state.currentScene !== 1 && jarIdx >= state.visibleCount) { posArr[i3+1] = -5000; continue; }
 
-                let bx = basePositions[i3], by = basePositions[i3+1], bz = basePositions[i3+2];
+                let bx, by, bz;
                 let off = new THREE.Vector3().copy(state.jarOffsets[jarIdx]);
 
                 if (state.currentScene === 1) {
-                    const s = 9 + audioAvg * 10.0; bx *= s; bz *= s; by *= 9;
+                    // ALL particles use General Jar shape logic
+                    const pt = getJarPoint('generaljar', particleParams[i*2], particleParams[i*2+1]);
+                    const s = 9 + audioAvg * 10.0; 
+                    bx = pt.x * s; by = pt.y * 9; bz = pt.z * s;
+                    off.set(0,0,0);
                     colArr[i3] = 0.2 + audioAvg; colArr[i3+1] = 0.3 + audioAvg; colArr[i3+2] = 0.9;
                     bloomPass.strength = 1.5 + audioAvg * 5.0;
                 } 
-                else if (state.currentScene === 2 || state.currentScene === 3) {
-                    const w = state.currentWeights[jarIdx];
-                    if (i % perJar === 0) state.currentWeights[jarIdx] += (state.targetWeights[jarIdx] - state.currentWeights[jarIdx]) * 0.05;
-                    const driftPower = audioAvg * 20 * w;
-                    bx += Math.sin(elapsed * 4 + jarIdx) * driftPower; by += Math.cos(elapsed * 3.5 + jarIdx) * driftPower; bz += Math.sin(elapsed * 4.2 + jarIdx) * driftPower;
-                    if (state.currentScene === 3) {
-                        if (i % perJar === 0) {
-                            const torque = audioAvg * 0.15 * w;
-                            state.jarAngVelocities[jarIdx].x += (Math.random() - 0.5) * torque;
-                            state.jarAngVelocities[jarIdx].z += (Math.random() - 0.5) * torque;
-                            state.jarTilts[jarIdx].add(state.jarAngVelocities[jarIdx]);
-                            state.jarAngVelocities[jarIdx].add(state.jarTilts[jarIdx].clone().multiplyScalar(-0.006));
-                            state.jarAngVelocities[jarIdx].multiplyScalar(0.95);
-                            state.jarTilts[jarIdx].multiplyScalar(0.996);
+                else {
+                    // Use pre-assigned shape from basePositions (13,000 per jar)
+                    bx = basePositions[i3]; by = basePositions[i3+1]; bz = basePositions[i3+2];
+                    
+                    if (state.currentScene === 2 || state.currentScene === 3) {
+                        const w = state.currentWeights[jarIdx];
+                        if (i % perJar === 0) state.currentWeights[jarIdx] += (state.targetWeights[jarIdx] - state.currentWeights[jarIdx]) * 0.05;
+                        const dp = audioAvg * 20 * w;
+                        bx += Math.sin(elapsed * 4 + jarIdx) * dp; by += Math.cos(elapsed * 3.5 + jarIdx) * dp; bz += Math.sin(elapsed * 4.2 + jarIdx) * dp;
+                        if (state.currentScene === 3) {
+                            if (i % perJar === 0) {
+                                const torque = audioAvg * 0.15 * w;
+                                state.jarAngVelocities[jarIdx].x += (Math.random() - 0.5) * torque; state.jarAngVelocities[jarIdx].z += (Math.random() - 0.5) * torque;
+                                state.jarTilts[jarIdx].add(state.jarAngVelocities[jarIdx]); state.jarAngVelocities[jarIdx].add(state.jarTilts[jarIdx].clone().multiplyScalar(-0.006));
+                                state.jarAngVelocities[jarIdx].multiplyScalar(0.95); state.jarTilts[jarIdx].multiplyScalar(0.996);
+                            }
+                            const tempV = new THREE.Vector3(bx, by, bz).applyEuler(new THREE.Euler(state.jarTilts[jarIdx].x, 0, state.jarTilts[jarIdx].z));
+                            bx = tempV.x; by = tempV.y; bz = tempV.z;
+                            off.lerp(new THREE.Vector3(0,0,0), state.pinchStrength);
                         }
-                        const tempV = new THREE.Vector3(bx, by, bz);
-                        tempV.applyEuler(new THREE.Euler(state.jarTilts[jarIdx].x, 0, state.jarTilts[jarIdx].z));
-                        bx = tempV.x; by = tempV.y; bz = tempV.z;
-                        off.lerp(new THREE.Vector3(0,0,0), state.pinchStrength);
+                        const sc = 4.0; bx *= sc; by *= sc; bz *= sc;
+                        colArr[i3] = 0.4 + audioAvg; colArr[i3+1] = 0.5; colArr[i3+2] = 1.0;
+                        bloomPass.strength = 1.2 + audioAvg * 3.5;
                     }
-                    const scale = 4.0; bx *= scale; by *= scale; bz *= scale;
-                    colArr[i3] = 0.4 + audioAvg; colArr[i3+1] = 0.5; colArr[i3+2] = 1.0;
-                    bloomPass.strength = 1.2 + audioAvg * 3.5;
-                }
-                else if (state.currentScene === 4) {
-                    const baseS = 2.8 * state.jarBaseScales[jarIdx];
-                    const scaledV = new THREE.Vector3(bx * baseS, by * baseS, bz * baseS);
-                    scaledV.multiplyScalar(1.0 + audioAvg * 0.3);
-                    scaledV.applyEuler(state.jarRotations[jarIdx]);
-                    bx = scaledV.x; by = scaledV.y; bz = scaledV.z;
-                    const shatter = state.jarShatter[jarIdx];
-                    if (shatter > 0.01) {
-                        const shardId = Math.floor(i / 180); 
-                        const shardOff = new THREE.Vector3(Math.sin(shardId), Math.cos(shardId*1.2), Math.sin(shardId*0.8)).multiplyScalar(shatter * 20);
-                        bx += shardOff.x; by += shardOff.y; bz += shardOff.z;
-                        if (i % perJar === 0) state.jarShatter[jarIdx] *= 0.82;
+                    else if (state.currentScene === 4) {
+                        const scaledV = new THREE.Vector3(bx * 2.8 * state.jarBaseScales[jarIdx], by * 2.8 * state.jarBaseScales[jarIdx], bz * 2.8 * state.jarBaseScales[jarIdx]);
+                        scaledV.multiplyScalar(1.0 + audioAvg * 0.3).applyEuler(state.jarRotations[jarIdx]);
+                        bx = scaledV.x; by = scaledV.y; bz = scaledV.z;
+                        const shat = state.jarShatter[jarIdx];
+                        if (shat > 0.01) {
+                            const shardId = Math.floor(i / 180); 
+                            const shardOff = new THREE.Vector3(Math.sin(shardId), Math.cos(shardId*1.2), Math.sin(shardId*0.8)).multiplyScalar(shat * 20);
+                            bx += shardOff.x; by += shardOff.y; bz += shardOff.z;
+                            if (i % perJar === 0) state.jarShatter[jarIdx] *= 0.82;
+                        }
+                        const tempCol = s4Colors[0].clone().lerp(s4Colors[1], (Math.sin(elapsed * 0.3 + jarIdx * 0.5)+1)/2);
+                        colArr[i3] = tempCol.r + audioAvg; colArr[i3+1] = tempCol.g; colArr[i3+2] = tempCol.b;
+                        bloomPass.strength = 1.2 + audioAvg * 3.5;
                     }
-                    const cTime = elapsed * 0.3 + jarIdx * 0.5;
-                    const tempCol = s4Colors[0].clone().lerp(s4Colors[1], (Math.sin(cTime)+1)/2);
-                    colArr[i3] = tempCol.r + audioAvg; colArr[i3+1] = tempCol.g; colArr[i3+2] = tempCol.b;
-                    bloomPass.strength = 1.2 + audioAvg * 3.5;
-                }
-                else if (state.currentScene === 5) {
-                    const sluggishAudio = audioAvg * (1.0 - s5Progress * 0.85);
-                    const finalScale = s5DynamicScale * (1.0 + sluggishAudio * 0.12);
-                    const dissipation = Math.pow(s5Progress, 2.5) * 38.0; 
-                    bx = bx * finalScale + (Math.sin(i * 0.01) * dissipation);
-                    by = by * finalScale + (Math.cos(i * 0.012) * dissipation);
-                    bz = bz * finalScale + (Math.sin(i * 0.008) * dissipation);
-                    
-                    const cTimeS4 = elapsed * 0.3 + jarIdx * 0.5;
-                    const colS4 = s4Colors[0].clone().lerp(s4Colors[1], (Math.sin(cTimeS4)+1)/2);
-                    const colS1 = new THREE.Color(0x00f2ff);
-                    const baseCol = colS4.clone().lerp(colS1, s5ColFactor);
-                    const fadeDarken = 1.0 - Math.pow(s5Progress, 6.0);
-                    
-                    colArr[i3] = (baseCol.r + audioAvg) * fadeDarken; 
-                    colArr[i3+1] = (baseCol.g + audioAvg) * fadeDarken;
-                    colArr[i3+2] = (baseCol.b + audioAvg) * fadeDarken;
-                    
-                    if (elapsed > 407.2 && elapsed < 408.0) {
-                        const flash = Math.sin((elapsed - 407.2) * 18.0);
-                        material.opacity = Math.max(0, 1.0 - (elapsed - 407.2) * 2.5);
-                        bloomPass.strength = 0.5 + Math.abs(flash) * 10.0;
-                    } else {
-                        bloomPass.strength = 1.2 * Math.sqrt(1.0 - s5Progress);
-                        material.opacity = 1.0;
+                    else if (state.currentScene === 5) {
+                        const sluggish = audioAvg * (1.0 - s5Progress * 0.85);
+                        const finalSc = s5DynamicScale * (1.0 + sluggish * 0.12);
+                        const diss = Math.pow(s5Progress, 2.5) * 38.0; 
+                        bx = bx * finalSc + (Math.sin(i * 0.01) * diss); by = by * finalSc + (Math.cos(i * 0.012) * diss); bz = bz * finalSc + (Math.sin(i * 0.008) * diss);
+                        const baseCol = s4Colors[0].clone().lerp(s4Colors[1], (Math.sin(elapsed * 0.3 + jarIdx * 0.5)+1)/2).lerp(new THREE.Color(0x00f2ff), s5ColFactor);
+                        const fd = 1.0 - Math.pow(s5Progress, 6.0);
+                        colArr[i3] = (baseCol.r + audioAvg) * fd; colArr[i3+1] = (baseCol.g + audioAvg) * fd; colArr[i3+2] = (baseCol.b + audioAvg) * fd;
+                        if (elapsed > 407.2 && elapsed < 408.0) { material.opacity = Math.max(0, 1.0 - (elapsed - 407.2) * 2.5); bloomPass.strength = 0.5 + Math.abs(Math.sin((elapsed - 407.2) * 18.0)) * 10.0; } 
+                        else { bloomPass.strength = 1.2 * Math.sqrt(1.0 - s5Progress); material.opacity = 1.0; }
                     }
                 }
 
@@ -498,27 +395,17 @@
             const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
             hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.75 });
             hands.onResults((results) => {
-                if (state.currentScene === 2) {
-                    state.pinchStrength = 0; state.prevHandX = null; state.prevHandY = null; state.isReadyToShuffle = false;
-                    return;
-                }
+                if (state.currentScene === 2) { state.pinchStrength = 0; state.prevHandX = null; state.prevHandY = null; state.isReadyToShuffle = false; return; }
                 if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                     const lm = results.multiHandLandmarks[0];
-                    const pinchDist = Math.hypot(lm[8].x - lm[4].x, lm[8].y - lm[4].y);
-                    state.pinchStrength = THREE.MathUtils.smoothstep(0.22 - pinchDist, 0, 0.16);
-                    if (state.currentScene === 3) {
-                        if (state.pinchStrength > 0.45) state.isReadyToShuffle = true;
-                        else if (state.isReadyToShuffle && state.pinchStrength < 0.15) { reshuffleGrid(); state.isReadyToShuffle = false; }
-                    }
-                    if (!(state.currentScene === 4 && state.qPressed) && state.currentScene !== 3 && state.currentScene < 5 && state.prevHandX !== null) {
-                        state.rotationMomentumX += (lm[9].x - state.prevHandX) * -0.4;
-                        state.rotationMomentumY += (lm[9].y - state.prevHandY) * -0.2;
-                    }
+                    const pd = Math.hypot(lm[8].x - lm[4].x, lm[8].y - lm[4].y);
+                    state.pinchStrength = THREE.MathUtils.smoothstep(0.22 - pd, 0, 0.16);
+                    if (state.currentScene === 3) { if (state.pinchStrength > 0.45) state.isReadyToShuffle = true; else if (state.isReadyToShuffle && state.pinchStrength < 0.15) { reshuffleGrid(); state.isReadyToShuffle = false; } }
+                    if (!(state.currentScene === 4 && state.qPressed) && state.currentScene !== 3 && state.currentScene < 5 && state.prevHandX !== null) { state.rotationMomentumX += (lm[9].x - state.prevHandX) * -0.4; state.rotationMomentumY += (lm[9].y - state.prevHandY) * -0.2; }
                     state.prevHandX = lm[9].x; state.prevHandY = lm[9].y;
                 } else { state.pinchStrength = 0; state.prevHandX = null; state.prevHandY = null; state.isReadyToShuffle = false; }
             });
-            const cam = new Camera(document.getElementById('webcam'), { onFrame: async () => { await hands.send({image: document.getElementById('webcam')}); }, width: 320, height: 240 });
-            cam.start();
+            new Camera(document.getElementById('webcam'), { onFrame: async () => { await hands.send({image: document.getElementById('webcam')}); }, width: 320, height: 240 }).start();
         }
 
         function setupKeyboard() { 
@@ -526,24 +413,11 @@
                 if (e.key >= '1' && e.key <= '5') triggerScene(parseInt(e.key)); 
                 if (e.key.toLowerCase() === 'q') state.qPressed = true;
                 if (e.key.toLowerCase() === 'f') {
-                    if (!document.fullscreenElement) {
-                        document.documentElement.requestFullscreen().then(() => { setTimeout(onWindowResize, 100); });
-                        document.body.classList.add('fullscreen-active');
-                    } else {
-                        if (document.exitFullscreen) {
-                            document.exitFullscreen().then(() => { setTimeout(onWindowResize, 100); });
-                            document.body.classList.remove('fullscreen-active');
-                        }
-                    }
+                    if (!document.fullscreenElement) { document.documentElement.requestFullscreen().then(() => { setTimeout(onWindowResize, 100); }); document.body.classList.add('fullscreen-active'); } 
+                    else { if (document.exitFullscreen) { document.exitFullscreen().then(() => { setTimeout(onWindowResize, 100); }); document.body.classList.remove('fullscreen-active'); } }
                 }
             }); 
-            window.addEventListener('keyup', (e) => {
-                if (e.key.toLowerCase() === 'q') state.qPressed = false;
-            });
-            document.addEventListener('fullscreenchange', () => {
-                if (!document.fullscreenElement) document.body.classList.remove('fullscreen-active');
-                setTimeout(onWindowResize, 100);
-            });
+            window.addEventListener('keyup', (e) => { if (e.key.toLowerCase() === 'q') state.qPressed = false; });
         }
         function setupUI() {
             document.getElementById('audio-file').onchange = (e) => {
