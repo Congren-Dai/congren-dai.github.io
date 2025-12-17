@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Living Pottery - Scene 5 Balanced Edition</title>
+    <title>Living Pottery - The Final Dissipation</title>
     
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
@@ -19,7 +19,7 @@
         }
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; color: white; user-select: none; }
         #canvas-container { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; display: block; }
-        #ui-layer { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+        #ui-layer { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; transition: opacity 0.5s; }
         .panel { pointer-events: auto; background: var(--bg-panel); backdrop-filter: blur(25px); border: 1px solid var(--border); border-radius: 16px; padding: 24px; position: absolute; }
         .left-panel { top: 20px; left: 20px; width: 300px; box-shadow: 0 10px 50px #000; }
         h2 { margin: 0; font-size: 1.2rem; background: linear-gradient(90deg, #fff, var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
@@ -205,6 +205,7 @@
             state.startTime = audio.context.currentTime - entry.start;
             isPlaying = true; state.currentScene = id;
             updateVisualParams(id, entry);
+            document.getElementById('ui-layer').style.opacity = "1";
         }
 
         function updateVisualParams(id, entry) {
@@ -292,36 +293,62 @@
             state.prevAudioAvg = audioAvg;
             const posArr = geometry.attributes.position.array, colArr = geometry.attributes.color.array, perJar = Math.floor(mainCount / shapeList.length);
 
-            let s5Progress = 0, s5DynamicScale = 2.8, s5ColFactor = 0;
-            if (state.currentScene === 5) {
+            let s5Progress = 0, s5DynamicScale = 2.8, s5ColFactor = 0, s5VisibleIndices = [];
+            
+            // MODIFIED Scene 5 & Void logic
+            if (state.currentScene >= 5) {
                 const s5Elapsed = elapsed - 320;
                 s5Progress = Math.min(s5Elapsed / 88, 1.0);
                 s5ColFactor = THREE.MathUtils.smoothstep(s5Elapsed, 5.0, 18.0); 
 
-                if (s5Elapsed < 22) { 
-                    state.visibleCount = 9; s5DynamicScale = 2.8; 
+                if (s5Elapsed < 30) { 
+                    s5VisibleIndices = [0,1,2,3,4,5,6,7,8];
+                    s5DynamicScale = 2.8; 
                     for(let i=0; i<9; i++) state.jarOffsets[i].lerp(new THREE.Vector3((i%3-1)*105, (Math.floor(i/3)-1)*115, 0), 0.025);
-                } else if (s5Elapsed < 44) { 
-                    state.visibleCount = 4; s5DynamicScale = 3.8; 
-                    for(let i=0; i<4; i++) state.jarOffsets[i].lerp(new THREE.Vector3((i%2-0.5)*155, (Math.floor(i/2)-0.5)*165, 0), 0.05);
-                } else if (s5Elapsed < 66) { 
-                    state.visibleCount = 2; s5DynamicScale = 5.2; 
-                    state.jarOffsets[0].lerp(new THREE.Vector3(-105, 0, 0), 0.05); state.jarOffsets[1].lerp(new THREE.Vector3(105, 0, 0), 0.05);
+                } else if (s5Elapsed < 55) { 
+                    s5VisibleIndices = [0,2,6,8];
+                    s5DynamicScale = 3.8; 
+                    state.jarOffsets[0].lerp(new THREE.Vector3(-80, -80, 0), 0.04);
+                    state.jarOffsets[2].lerp(new THREE.Vector3(80, -80, 0), 0.04);
+                    state.jarOffsets[6].lerp(new THREE.Vector3(-80, 80, 0), 0.04);
+                    state.jarOffsets[8].lerp(new THREE.Vector3(80, 80, 0), 0.04);
+                } else if (s5Elapsed < 75) { 
+                    s5VisibleIndices = [0,8];
+                    s5DynamicScale = 5.2; 
+                    state.jarOffsets[0].lerp(new THREE.Vector3(-105, 0, 0), 0.05); 
+                    state.jarOffsets[8].lerp(new THREE.Vector3(105, 0, 0), 0.05);
                 } else { 
-                    state.visibleCount = 1; s5DynamicScale = 6.8; 
+                    s5VisibleIndices = [0];
+                    s5DynamicScale = 6.8; 
                     state.jarOffsets[0].lerp(new THREE.Vector3(0, 0, 0), 0.05);
                 }
             }
 
             for (let i = 0; i < mainCount; i++) {
                 const i3 = i * 3, jarIdx = Math.floor(i / perJar);
-                if (jarIdx >= state.visibleCount) { posArr[i3+1] = -5000; continue; }
+                
+                if (state.currentScene >= 5) {
+                    // Force blackout after 6:48 (408.0s)
+                    if (elapsed >= 408.0) {
+                        posArr[i3+1] = -5000; 
+                        if (i === 0) {
+                            material.opacity = 0; 
+                            bloomPass.strength = 0;
+                            renderer.setClearColor(0x000000, 1);
+                            document.getElementById('ui-layer').style.opacity = "0";
+                        }
+                        continue; 
+                    }
+                    if (!s5VisibleIndices.includes(jarIdx)) { posArr[i3+1] = -5000; continue; }
+                } else if (jarIdx >= state.visibleCount) { 
+                    posArr[i3+1] = -5000; continue; 
+                }
 
                 let bx = basePositions[i3], by = basePositions[i3+1], bz = basePositions[i3+2];
                 let off = new THREE.Vector3().copy(state.jarOffsets[jarIdx]);
 
                 if (state.currentScene === 1) {
-                    const s = 3.8 + audioAvg * 15.0; bx *= s; bz *= s; by *= 3.8;
+                    const s = 9 + audioAvg * 10.0; bx *= s; bz *= s; by *= 9;
                     colArr[i3] = 0.2 + audioAvg; colArr[i3+1] = 0.3 + audioAvg; colArr[i3+2] = 0.9;
                     bloomPass.strength = 1.5 + audioAvg * 5.0;
                 } 
@@ -374,28 +401,22 @@
                     bx = bx * finalScale + (Math.sin(i * 0.01) * dissipation);
                     by = by * finalScale + (Math.cos(i * 0.012) * dissipation);
                     bz = bz * finalScale + (Math.sin(i * 0.008) * dissipation);
+                    
                     const cTimeS4 = elapsed * 0.3 + jarIdx * 0.5;
                     const colS4 = s4Colors[0].clone().lerp(s4Colors[1], (Math.sin(cTimeS4)+1)/2);
                     const colS1 = new THREE.Color(0x00f2ff);
                     const baseCol = colS4.clone().lerp(colS1, s5ColFactor);
-                    const freqSubtlety = (analyser.getFrequencyData()[jarIdx*2] || 0) / 255 * 0.1;
-                    
-                    // FINE-TUNED: Increased power to 6.0 so brightness stays high longer
                     const fadeDarken = 1.0 - Math.pow(s5Progress, 6.0);
                     
-                    colArr[i3] = (baseCol.r + freqSubtlety) * 1.8 * fadeDarken; 
-                    colArr[i3+1] = (baseCol.g + freqSubtlety) * 1.8 * fadeDarken;
-                    colArr[i3+2] = (baseCol.b + freqSubtlety) * 2.2 * fadeDarken;
+                    colArr[i3] = (baseCol.r + audioAvg) * fadeDarken; 
+                    colArr[i3+1] = (baseCol.g + audioAvg) * fadeDarken;
+                    colArr[i3+2] = (baseCol.b + audioAvg) * fadeDarken;
                     
-                    if (elapsed >= 408.0) {
-                        material.opacity = 0; state.visibleCount = 0; bloomPass.strength = 0;
-                        renderer.setClearColor(0x000000, 1);
-                    } else if (elapsed > 407.2) {
+                    if (elapsed > 407.2 && elapsed < 408.0) {
                         const flash = Math.sin((elapsed - 407.2) * 18.0);
                         material.opacity = Math.max(0, 1.0 - (elapsed - 407.2) * 2.5);
                         bloomPass.strength = 0.5 + Math.abs(flash) * 10.0;
                     } else {
-                        // FINE-TUNED: Using square root of inverse progress to keep bloom stronger longer
                         bloomPass.strength = 1.2 * Math.sqrt(1.0 - s5Progress);
                         material.opacity = 1.0;
                     }
