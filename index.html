@@ -30,7 +30,6 @@
         #time-info { position: absolute; bottom: 30px; left: 30px; font-family: 'Courier New', monospace; color: var(--accent); font-size: 1.8rem; font-weight: bold; }
         .key-hint { color: var(--accent); font-weight: bold; background: rgba(255, 255, 255, 0.1); padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; }
 
-        /* Fullscreen styles */
         .fullscreen-active #ui-layer, 
         .fullscreen-active .cam-box { display: none !important; }
         .fullscreen-active { cursor: none; }
@@ -108,9 +107,8 @@
         function init() {
             const container = document.getElementById('canvas-container');
             scene = new THREE.Scene();
-            
             camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 4000);
-            camera.position.set(0, 0, 320); // Move back slightly for better centering
+            camera.position.set(0, 0, 320);
 
             renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -123,7 +121,7 @@
             composer.addPass(bloomPass);
 
             controls = new OrbitControls(camera, renderer.domElement);
-            controls.target.set(0, 0, 0); // Force rotation target to center
+            controls.target.set(0, 0, 0);
             controls.enableDamping = true;
 
             const listener = new THREE.AudioListener();
@@ -181,7 +179,8 @@
 
         function reshuffleGrid() {
             const slots = [];
-            for(let y=-1; y<=1; y++) for(let x=-1; x<=1; x++) slots.push(new THREE.Vector3(x*125, y*65, 0));
+            // Increased matrix interval for Scene 3
+            for(let y=-1; y<=1; y++) for(let x=-1; x<=1; x++) slots.push(new THREE.Vector3(x*180, y*100, 0));
             slots.sort(() => Math.random() - 0.5);
             for(let i=0; i<6; i++) state.jarOffsets[i].copy(slots[i]);
         }
@@ -218,7 +217,8 @@
             else if (id === 2 || id === 3) {
                 state.visibleCount = 6;
                 if (id === 3) reshuffleGrid();
-                else for(let i=0; i<6; i++) state.jarOffsets[i].set((i%3-1)*90, (Math.floor(i/3)-0.5)*-110, 0);
+                // Increased interval for Scene 2
+                else for(let i=0; i<6; i++) state.jarOffsets[i].set((i%3-1)*140, (Math.floor(i/3)-0.5)*-160, 0);
                 pickRandomJars();
             } else if (id === 4) {
                 state.visibleCount = 10;
@@ -252,7 +252,7 @@
                 particles.rotation.y *= 0.88; particles.rotation.x *= 0.88;
                 state.rotationMomentumX = 0; state.rotationMomentumY = 0;
                 controls.enableRotate = false;
-            } else if (state.currentScene < 5 && state.currentScene !== 3) {
+            } else if (state.currentScene < 5 && state.currentScene !== 3 && state.currentScene !== 2) {
                 particles.rotation.y += state.rotationMomentumX; particles.rotation.x += state.rotationMomentumY;
                 controls.enableRotate = true;
             } else {
@@ -347,7 +347,8 @@
                         bx = tempV.x; by = tempV.y; bz = tempV.z;
                         off.lerp(new THREE.Vector3(0,0,0), state.pinchStrength);
                     }
-                    const scale = 2.7; bx *= scale; by *= scale; bz *= scale;
+                    // Increased jar size for Scene 2 & 3
+                    const scale = 4.0; bx *= scale; by *= scale; bz *= scale;
                     colArr[i3] = 0.4 + audioAvg; colArr[i3+1] = 0.5; colArr[i3+2] = 1.0;
                     bloomPass.strength = 1.2 + audioAvg * 3.5;
                 }
@@ -410,6 +411,10 @@
             const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
             hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.75 });
             hands.onResults((results) => {
+                if (state.currentScene === 2) {
+                    state.pinchStrength = 0; state.prevHandX = null; state.prevHandY = null; state.isReadyToShuffle = false;
+                    return;
+                }
                 if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                     const lm = results.multiHandLandmarks[0];
                     const pinchDist = Math.hypot(lm[8].x - lm[4].x, lm[8].y - lm[4].y);
@@ -435,15 +440,11 @@
                 if (e.key.toLowerCase() === 'q') state.qPressed = true;
                 if (e.key.toLowerCase() === 'f') {
                     if (!document.fullscreenElement) {
-                        document.documentElement.requestFullscreen().then(() => {
-                            setTimeout(onWindowResize, 100);
-                        });
+                        document.documentElement.requestFullscreen().then(() => { setTimeout(onWindowResize, 100); });
                         document.body.classList.add('fullscreen-active');
                     } else {
                         if (document.exitFullscreen) {
-                            document.exitFullscreen().then(() => {
-                                setTimeout(onWindowResize, 100);
-                            });
+                            document.exitFullscreen().then(() => { setTimeout(onWindowResize, 100); });
                             document.body.classList.remove('fullscreen-active');
                         }
                     }
