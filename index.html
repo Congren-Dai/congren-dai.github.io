@@ -27,7 +27,6 @@
         .sub-text { font-size: 0.65rem; font-weight: normal; opacity: 0.8; display: block; margin-top: 4px; }
         .btn { background: linear-gradient(135deg, #e67e22, #d35400); border: 1px solid var(--border); color: white; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: 600; text-align: center; width: 100%; margin-top: 10px; }
         
-        /* 保持摄像头画面隐藏 */
         .cam-box { display: none; position: fixed; bottom: 20px; right: 20px; width: 180px; height: 135px; background: black; border-radius: 12px; border: 1px solid var(--border); z-index: 20; opacity: 0.4; }
 
         #time-info { position: absolute; bottom: 30px; left: 30px; font-family: 'Courier New', monospace; color: var(--accent); font-size: 1.8rem; font-weight: bold; }
@@ -90,13 +89,14 @@
             prevHandX: null, prevHandY: null, rotationMomentumX: 0, rotationMomentumY: 0
         };
 
+        // Updated Timeline as requested
         const timeline = [
             { id: 1, start: 0, end: 92, name: "ENERGY INFUSION", desc: "Single Massive Jar Response" },
             { id: 2, start: 92, end: 145, name: "SELECTIVE BREAKOUT", desc: "Redistributed Displacement" },
-            { id: 3, start: 145, end: 200, name: "SYSTEM IMBALANCE", desc: "Angular Instability" },
-            { id: 4, start: 200, end: 320, name: "DYNAMIC SYNC FIELD", desc: "Lock View & Horizontal Circle" },
-            { id: 5, start: 320, end: 408, name: "RESIDUAL DISSIPATION", desc: "Energy Exhaustion & Residual Impression" },
-            { id: 6, start: 408, end: 9999, name: "VOID", desc: "Total Silence" }
+            { id: 3, start: 145, end: 221, name: "SYSTEM IMBALANCE", desc: "Angular Instability" },
+            { id: 4, start: 221, end: 365, name: "DYNAMIC SYNC FIELD", desc: "Lock View & Horizontal Circle" },
+            { id: 5, start: 365, end: 406, name: "RESIDUAL DISSIPATION", desc: "Energy Exhaustion & Residual Impression" },
+            { id: 6, start: 406, end: 9999, name: "VOID", desc: "Total Silence" }
         ];
 
         let scene, camera, renderer, composer, bloomPass, controls, particles, geometry, material, basePositions, particleParams, audio, analyser, isPlaying = false;
@@ -276,18 +276,23 @@
 
             const posArr = geometry.attributes.position.array, colArr = geometry.attributes.color.array, perJar = Math.floor(mainCount / 10);
             let s5p = 0, s5s = 2.8, s5v = [];
+            
+            // Logic updated to match new start/end times
             if (state.currentScene >= 5) {
-                const s5e = elapsed - 320; s5p = Math.min(s5e / 88, 1.0);
-                if (s5e < 30) { s5v = [0,1,2,3,4,5,6,7,8]; s5s = 2.8; for(let i=0; i<9; i++) state.jarOffsets[i].lerp(new THREE.Vector3((i%3-1)*105, (Math.floor(i/3)-1)*115, 0), 0.025); }
-                else if (s5e < 55) { s5v = [0,2,6,8]; s5s = 3.8; state.jarOffsets[0].lerp(new THREE.Vector3(-80, -80, 0), 0.04); state.jarOffsets[2].lerp(new THREE.Vector3(80, -80, 0), 0.04); state.jarOffsets[6].lerp(new THREE.Vector3(-80, 80, 0), 0.04); state.jarOffsets[8].lerp(new THREE.Vector3(80, 80, 0), 0.04); }
-                else if (s5e < 75) { s5v = [0,8]; s5s = 5.2; state.jarOffsets[0].lerp(new THREE.Vector3(-105, 0, 0), 0.05); state.jarOffsets[8].lerp(new THREE.Vector3(105, 0, 0), 0.05); }
+                const s5e = elapsed - 365; // Updated from 320 to 365
+                s5p = Math.min(s5e / 41, 1.0); // Adjusted normalisation factor
+                if (s5e < 15) { s5v = [0,1,2,3,4,5,6,7,8]; s5s = 2.8; for(let i=0; i<9; i++) state.jarOffsets[i].lerp(new THREE.Vector3((i%3-1)*105, (Math.floor(i/3)-1)*115, 0), 0.025); }
+                else if (s5e < 25) { s5v = [0,2,6,8]; s5s = 3.8; state.jarOffsets[0].lerp(new THREE.Vector3(-80, -80, 0), 0.04); state.jarOffsets[2].lerp(new THREE.Vector3(80, -80, 0), 0.04); state.jarOffsets[6].lerp(new THREE.Vector3(-80, 80, 0), 0.04); state.jarOffsets[8].lerp(new THREE.Vector3(80, 80, 0), 0.04); }
+                else if (s5e < 35) { s5v = [0,8]; s5s = 5.2; state.jarOffsets[0].lerp(new THREE.Vector3(-105, 0, 0), 0.05); state.jarOffsets[8].lerp(new THREE.Vector3(105, 0, 0), 0.05); }
                 else { s5v = [0]; s5s = 6.8; state.jarOffsets[0].lerp(new THREE.Vector3(0, 0, 0), 0.05); }
             }
 
             for (let i = 0; i < mainCount; i++) {
                 const i3 = i * 3, jIdx = Math.floor(i / perJar), theta = particleParams[i*2], h = particleParams[i*2+1];
                 if (state.currentScene >= 5) {
-                    if (elapsed >= 408) { posArr[i3+1] = -5000; if (i === 0) { material.opacity = 0; bloomPass.strength = 0; } continue; }
+                    if (elapsed >= 406) { // Updated from 408 to 406
+                        posArr[i3+1] = -5000; if (i === 0) { material.opacity = 0; bloomPass.strength = 0; } continue; 
+                    }
                     if (!s5v.includes(jIdx)) { posArr[i3+1] = -5000; continue; }
                 } else if (state.currentScene !== 1 && jIdx >= state.visibleCount) { posArr[i3+1] = -5000; continue; }
 
@@ -355,7 +360,6 @@
 
         function setupKeyboard() { 
             window.addEventListener('keydown', (e) => { 
-                // 核心修改：按下空格时阻止浏览器执行默认操作（如点击焦点按钮）
                 if (e.key === ' ') {
                     e.preventDefault(); 
                     if (audio.isPlaying) {
@@ -384,7 +388,6 @@
                 const reader = new FileReader();
                 reader.onload = (ev) => { audio.context.decodeAudioData(ev.target.result, (buf) => { audio.setBuffer(buf); audio.offset = 0; audio.play(); state.startTime = audio.context.currentTime; state.pausedAt = 0; isPlaying = true; state.audioIsReady = true; }); };
                 reader.readAsArrayBuffer(e.target.files[0]);
-                // 加载完成后主动让按钮失去焦点
                 document.activeElement.blur();
             };
         }
