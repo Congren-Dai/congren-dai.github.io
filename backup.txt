@@ -1,0 +1,958 @@
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Living Pottery - Chinese Heritage Edition</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        :root {
+            --accent: #ffaa00; 
+            --bg-panel: rgba(10, 8, 5, 0.95);
+            --border: rgba(255, 180, 100, 0.3);
+            --mode-scene: #00f2ff;
+        }
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; color: white; user-select: none; }
+        #canvas-container { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; display: block; }
+        #ui-layer { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; transition: opacity 0.5s; }
+        .panel { pointer-events: auto; background: var(--bg-panel); backdrop-filter: blur(25px); border: 1px solid var(--border); border-radius: 16px; padding: 24px; position: absolute; }
+        .left-panel { top: 20px; left: 20px; width: 300px; box-shadow: 0 10px 50px #000; }
+        h2 { margin: 0; font-size: 1.2rem; background: linear-gradient(90deg, #fff, var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .level-badge { font-size: 0.9rem; font-weight: 800; text-align: center; padding: 12px; border-radius: 10px; background: rgba(0, 242, 255, 0.15); border: 1px solid var(--mode-scene); }
+        .sub-text { font-size: 0.65rem; font-weight: normal; opacity: 0.8; display: block; margin-top: 4px; }
+        .btn { background: linear-gradient(135deg, #e67e22, #d35400); border: 1px solid var(--border); color: white; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: 600; text-align: center; width: 100%; margin-top: 10px; }
+        .cam-box { position: fixed; bottom: 20px; right: 20px; width: 180px; height: 135px; background: black; border-radius: 12px; border: 1px solid var(--border); z-index: 20; opacity: 0.4; }
+        #time-info { position: absolute; bottom: 30px; left: 30px; font-family: 'Courier New', monospace; color: var(--accent); font-size: 1.8rem; font-weight: bold; }
+        .key-hint { color: var(--accent); font-weight: bold; background: rgba(255, 255, 255, 0.1); padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; }
+        .fullscreen-active #ui-layer, .fullscreen-active .cam-box { display: none !important; }
+        .fullscreen-active { cursor: none; }
+    </style>
+    
+    <script type="importmap">
+    { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
+    </script>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <div class="panel left-panel">
+            <h2>🏺 Chinese Heritage Pottery</h2>
+            <div id="scene-display" class="level-badge">SCENE 1<span class="sub-text">ENERGY INFUSION</span></div>
+            <div style="font-size: 0.85rem; color: #ddd; margin-top: 15px;">
+                <span id="scene-desc">Initialising...</span>
+                <div style="margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px;">
+                    <span class="key-hint">1-5</span> Scene Selection<br>
+                    <span class="key-hint">Q</span> Hold for Level Circle (S4)<br>
+                    <span class="key-hint">F</span> Toggle Fullscreen Mode<br>
+                    <span id="pinch-label" style="color:#00f2ff; font-weight: bold; font-size: 0.8rem;">PINCH TO CONTROL GRID</span>
+                </div>
+            </div>
+            <button class="btn" onclick="document.getElementById('audio-file').click()">📂 Load MP3 Track</button>
+            <input type="file" id="audio-file" accept="audio/*" style="display: none;">
+        </div>
+        <div id="time-info">00:00 / 00:00</div>
+    </div>
+
+    <div class="cam-box"><video id="webcam" playsinline style="width:100%; height:100%; object-fit:cover; transform:scaleX(-1);"></video></div>
+    <div id="canvas-container"></div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+        const state = {
+            currentScene: 0, startTime: 0, visibleCount: 1,
+            jarOffsets: Array(10).fill().map(() => new THREE.Vector3()),
+            targetWeights: Array(10).fill(0),   
+            currentWeights: Array(10).fill(0),  
+            lastSwitchTime: 0,
+            jarTilts: Array(10).fill().map(() => new THREE.Vector3()), 
+            jarAngVelocities: Array(10).fill().map(() => new THREE.Vector3()), 
+            jarShatter: Array(10).fill(0),
+            jarVelocities: Array(10).fill().map(() => new THREE.Vector3()),
+            jarBaseScales: Array(10).fill(1),
+            jarRotations: Array(10).fill().map(() => new THREE.Euler()), 
+            jarSpinSpeeds: Array(10).fill().map(() => new THREE.Vector3()), 
+            qPressed: false, 
+            pinchStrength: 0, isReadyToShuffle: false,
+            audioIsReady: false, prevAudioAvg: 0,
+            prevHandX: null, prevHandY: null, rotationMomentumX: 0, rotationMomentumY: 0
+        };
+
+        const timeline = [
+            { id: 1, start: 0, end: 70, name: "ENERGY INFUSION", desc: "Single Massive Jar Response" },
+            { id: 2, start: 70, end: 130, name: "SELECTIVE BREAKOUT", desc: "Redistributed Displacement" },
+            { id: 3, start: 130, end: 200, name: "SYSTEM IMBALANCE", desc: "Angular Instability" },
+            { id: 4, start: 200, end: 320, name: "DYNAMIC SYNC FIELD", desc: "Lock View & Horizontal Circle" },
+            { id: 5, start: 320, end: 408, name: "RESIDUAL DISSIPATION", desc: "Energy Exhaustion & Residual Impression" },
+            { id: 6, start: 408, end: 9999, name: "VOID", desc: "Total Silence" }
+        ];
+
+        let scene, camera, renderer, composer, bloomPass, controls, particles, geometry, material, basePositions, particleParams, audio, analyser, isPlaying = false;
+        const mainCount = 130000;
+        const shapeList = ['generaljar', 'yuhuchun', 'tianqiu', 'cong', 'garlic', 'moonflask', 'meiping', 'gu', 'malan', 'zun'];
+        const s4Colors = [new THREE.Color(0xffaa00), new THREE.Color(0x00f2ff)];
+
+        init();
+
+        function getJarPoint(shape, theta, h) {
+            let r;
+            const targetH = 20;
+            switch(shape) {
+                case 'generaljar': {
+                    const s = 1.25; const localH = h / s;
+                    if (localH > 6) r = (2.0 + Math.cos((localH - 7) * 1.5) * 1.8) * s;
+                    else if (localH > 4) r = 2.2 * s;
+                    else { let normH = (localH + 8) / 12; r = (2.5 + 5.0 * Math.sin(normH * Math.PI * 0.7)) * s; }
+                    break;
+                }
+                case 'meiping': r = (h < 5) ? 5.5 * Math.cos(h * 0.12) : 5.5 * Math.cos(5 * 0.12) * Math.exp(-(h-5)*0.5); break;
+                case 'yuhuchun': { const s = 20 / 22; const localH = h / s; r = ((localH < -2) ? 6 * Math.cos((localH+6)*0.15) : 1.5 + 4.5 * Math.exp(-(localH+2)*0.3)) * s; break; }
+                case 'tianqiu': r = (h < 2) ? Math.sqrt(Math.max(0, 64 - Math.pow(h+4, 2))) : 1.8; break;
+                case 'cong': { const side = 4.5; r = side / Math.max(Math.abs(Math.cos(theta)), Math.abs(Math.sin(theta))); if (h > 8 || h < -8) r *= 0.8; break; }
+                case 'garlic': { const s = 20 / 24; const localH = h / s; if (localH > 9) r = (2.5 * Math.cos((localH-10))) * s; else if (localH > 0) r = 1.2 * s; else r = (5.5 * Math.cos((localH+4)*0.18)) * s; break; }
+                case 'moonflask': { const s = 20 / 18; const localH = h / s; let rad = (localH < 4) ? Math.sqrt(Math.max(0, 49 - Math.pow(localH+2, 2))) : 1.5; let thickness = 0.4 + 0.6 * Math.abs(Math.sin(theta)); r = rad * thickness * s; break; }
+                case 'gu': { const s = 20 / 18; const localH = h / s; r = (2.0 + Math.pow(Math.abs(localH)/10, 2.5) * 2.5) * s; break; }
+                case 'malan': r = (h > 2) ? 1.2 : 5.5 * Math.exp(-(Math.pow(h+5, 2))/40); break;
+                case 'zun': { const s = 20 / 18; const localH = h / s; r = (4 + 2 * Math.sin(localH * 0.4)) * s; break; }
+                default: r = 5;
+            }
+            const relief = 1 + 0.06 * Math.sin(theta * 12 + h * 0.5) * Math.cos(theta * 8 - h);
+            r *= relief;
+            return { x: r * Math.cos(theta), y: h, z: r * Math.sin(theta) };
+        }
+
+        function init() {
+            const container = document.getElementById('canvas-container');
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 4000);
+            camera.position.set(0, 0, 320);
+
+            renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            container.appendChild(renderer.domElement);
+
+            bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 2.2, 0.4, 0.05);
+            composer = new EffectComposer(renderer);
+            composer.addPass(new RenderPass(scene, camera));
+            composer.addPass(bloomPass);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+
+            const listener = new THREE.AudioListener();
+            camera.add(listener);
+            audio = new THREE.Audio(listener);
+            analyser = new THREE.AudioAnalyser(audio, 128);
+
+            initParticles();
+            setupUI();
+            setupKeyboard();
+            startHandTracking();
+            
+            window.addEventListener('resize', onWindowResize);
+            animate();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+            bloomPass.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function initParticles() {
+            geometry = new THREE.BufferGeometry();
+            const pos = new Float32Array(mainCount * 3), col = new Float32Array(mainCount * 3);
+            basePositions = new Float32Array(mainCount * 3);
+            particleParams = new Float32Array(mainCount * 2); 
+            const perShape = Math.floor(mainCount / shapeList.length);
+
+            for (let i = 0; i < mainCount; i++) {
+                const sIdx = Math.floor(i / perShape);
+                const theta = Math.random() * Math.PI * 2;
+                const h = ((i % perShape) / perShape - 0.5) * 20;
+                
+                particleParams[i*2] = theta;
+                particleParams[i*2+1] = h;
+
+                const pt = getJarPoint(shapeList[sIdx], theta, h);
+                basePositions[i*3] = pt.x; basePositions[i*3+1] = pt.y; basePositions[i*3+2] = pt.z;
+            }
+            geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(col, 3));
+            material = new THREE.PointsMaterial({ size: 0.35, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 1.0, map: new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/disc.png') });
+            particles = new THREE.Points(geometry, material);
+            scene.add(particles);
+        }
+
+        function reshuffleGrid() {
+            const slots = [];
+            for(let y=-1; y<=1; y++) for(let x=-1; x<=1; x++) slots.push(new THREE.Vector3(x*180, y*100, 0));
+            slots.sort(() => Math.random() - 0.5);
+            for(let i=0; i<6; i++) state.jarOffsets[i].copy(slots[i]);
+        }
+
+        function pickRandomJars() {
+            state.targetWeights.fill(0);
+            let selected = 0; 
+            // 确保随机选择 1 到 2 个罐子
+            const targetCount = Math.floor(Math.random() * 2) + 1; 
+            while(selected < targetCount) {
+                const idx = Math.floor(Math.random() * 6); 
+                if(state.targetWeights[idx] === 0) { 
+                    state.targetWeights[idx] = 1; 
+                    selected++; 
+                }
+            }
+        }
+
+        function triggerScene(id) {
+            const entry = timeline.find(t => t.id === id);
+            if (!entry || !state.audioIsReady) return;
+            if (audio.isPlaying) audio.stop();
+            audio.offset = entry.start; audio.play(); 
+            state.startTime = audio.context.currentTime - entry.start;
+            isPlaying = true; state.currentScene = id;
+            updateVisualParams(id, entry);
+            document.getElementById('ui-layer').style.opacity = "1";
+        }
+
+        function updateVisualParams(id, entry) {
+            document.getElementById('scene-display').innerHTML = `SCENE ${id}<span class="sub-text">${entry.name}</span>`;
+            document.getElementById('scene-desc').innerText = entry.desc;
+            material.opacity = 1.0; 
+
+            if (id === 1) { 
+                state.visibleCount = 1; 
+                state.jarOffsets[0].set(0,0,0); 
+                state.targetWeights.fill(0);
+                state.targetWeights[0] = 1;
+            }
+            else if (id === 2 || id === 3) {
+                state.visibleCount = 6;
+                if (id === 3) reshuffleGrid();
+                else for(let i=0; i<6; i++) state.jarOffsets[i].set((i%3-1)*140, (Math.floor(i/3)-0.5)*-160, 0);
+                
+                // 重置切换时间并立即执行第一次随机选择
+                state.lastSwitchTime = (audio.isPlaying) ? audio.context.currentTime - state.startTime : 0;
+                pickRandomJars();
+            } else if (id === 4) {
+                state.visibleCount = 10;
+                for(let i=0; i<10; i++) {
+                    state.jarOffsets[i].set((Math.random()-0.5)*180, (Math.random()-0.5)*100, 0);
+                    state.jarVelocities[i].set((Math.random()-0.5), (Math.random()-0.5), (Math.random()-0.5)).normalize().multiplyScalar(0.4);
+                    state.jarBaseScales[i] = 1.0 + Math.random() * 0.4;
+                    state.jarSpinSpeeds[i].set((Math.random()-0.5)*0.04, (Math.random()-0.5)*0.08, (Math.random()-0.5)*0.04);
+                }
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            let elapsed = isPlaying ? audio.context.currentTime - state.startTime : 0;
+            const entry = timeline.find(t => elapsed >= t.start && elapsed < t.end);
+            if (entry && state.currentScene !== entry.id) { state.currentScene = entry.id; updateVisualParams(entry.id, entry); }
+            
+            if (audio.buffer) {
+                const total = audio.buffer.duration;
+                document.getElementById('time-info').innerText = `${Math.floor(elapsed/60).toString().padStart(2,'0')}:${Math.floor(elapsed%60).toString().padStart(2,'0')} / ${Math.floor(total/60).toString().padStart(2,'0')}:${Math.floor(total%60).toString().padStart(2,'0')}`;
+            }
+
+            let audioAvg = isPlaying ? analyser.getAverageFrequency() / 255 : 0;
+
+            // Scene 2 和 Scene 3 现在都使用相同的随机切换逻辑 (1-2 个罐子)
+            if ((state.currentScene === 2 || state.currentScene === 3) && isPlaying) {
+                if (elapsed - state.lastSwitchTime > 4.2) { 
+                    pickRandomJars(); 
+                    state.lastSwitchTime = elapsed; 
+                }
+            }
+
+            if (state.currentScene === 4 && state.qPressed) {
+                particles.rotation.y *= 0.88; particles.rotation.x *= 0.88;
+                state.rotationMomentumX = 0; state.rotationMomentumY = 0;
+                controls.enableRotate = false;
+            } else if (state.currentScene < 5 && state.currentScene !== 3 && state.currentScene !== 2) {
+                particles.rotation.y += state.rotationMomentumX; particles.rotation.x += state.rotationMomentumY;
+                controls.enableRotate = true;
+            } else {
+                particles.rotation.y *= 0.93; particles.rotation.x *= 0.93;
+                controls.enableRotate = true;
+            }
+            state.rotationMomentumX *= 0.95; state.rotationMomentumY *= 0.95;
+
+            if (state.currentScene === 4) {
+                const delta = audioAvg - state.prevAudioAvg;
+                if (delta > 0.05 || (audioAvg > 0.45 && Math.random() > 0.97)) {
+                    const count = Math.floor(Math.random() * 2) + 1; 
+                    for(let k=0; k<count; k++) { state.jarShatter[Math.floor(Math.random() * 10)] = 1.0; }
+                }
+                const moveSpeed = 0.5 + audioAvg * 3.0;
+                for(let i=0; i<10; i++) {
+                    if (state.qPressed) {
+                        const t = elapsed * 0.4; const radius = 140; const angleOffset = (i * Math.PI * 2) / 10;
+                        state.jarOffsets[i].lerp(new THREE.Vector3(Math.cos(t + angleOffset) * radius, 0, Math.sin(t + angleOffset) * radius), 0.05);
+                        state.jarRotations[i].set(state.jarRotations[i].x*0.88, state.jarRotations[i].y*0.88, state.jarRotations[i].z*0.88);
+                    } else {
+                        state.jarOffsets[i].add(state.jarVelocities[i].clone().multiplyScalar(moveSpeed));
+                        if (Math.abs(state.jarOffsets[i].x) > 200) state.jarVelocities[i].x *= -1;
+                        if (Math.abs(state.jarOffsets[i].y) > 120) state.jarVelocities[i].y *= -1;
+                        if (Math.abs(state.jarOffsets[i].z) > 100) state.jarVelocities[i].z *= -1;
+                        const sb = 0.5 + audioAvg * 2.0;
+                        state.jarRotations[i].x += state.jarSpinSpeeds[i].x * sb; state.jarRotations[i].y += state.jarSpinSpeeds[i].y * sb; state.jarRotations[i].z += state.jarSpinSpeeds[i].z * sb;
+                    }
+                }
+            }
+            
+            state.prevAudioAvg = audioAvg;
+            const posArr = geometry.attributes.position.array, colArr = geometry.attributes.color.array, perJar = Math.floor(mainCount / 10);
+
+            let s5Progress = 0, s5DynamicScale = 2.8, s5ColFactor = 0, s5VisibleIndices = [];
+            if (state.currentScene >= 5) {
+                const s5Elapsed = elapsed - 320;
+                s5Progress = Math.min(s5Elapsed / 88, 1.0);
+                s5ColFactor = THREE.MathUtils.smoothstep(s5Elapsed, 5.0, 18.0); 
+                if (s5Elapsed < 30) { s5VisibleIndices = [0,1,2,3,4,5,6,7,8]; s5DynamicScale = 2.8; for(let i=0; i<9; i++) state.jarOffsets[i].lerp(new THREE.Vector3((i%3-1)*105, (Math.floor(i/3)-1)*115, 0), 0.025); }
+                else if (s5Elapsed < 55) { s5VisibleIndices = [0,2,6,8]; s5DynamicScale = 3.8; state.jarOffsets[0].lerp(new THREE.Vector3(-80, -80, 0), 0.04); state.jarOffsets[2].lerp(new THREE.Vector3(80, -80, 0), 0.04); state.jarOffsets[6].lerp(new THREE.Vector3(-80, 80, 0), 0.04); state.jarOffsets[8].lerp(new THREE.Vector3(80, 80, 0), 0.04); }
+                else if (s5Elapsed < 75) { s5VisibleIndices = [0,8]; s5DynamicScale = 5.2; state.jarOffsets[0].lerp(new THREE.Vector3(-105, 0, 0), 0.05); state.jarOffsets[8].lerp(new THREE.Vector3(105, 0, 0), 0.05); }
+                else { s5VisibleIndices = [0]; s5DynamicScale = 6.8; state.jarOffsets[0].lerp(new THREE.Vector3(0, 0, 0), 0.05); }
+            }
+
+            for (let i = 0; i < mainCount; i++) {
+                const i3 = i * 3, jarIdx = Math.floor(i / perJar);
+                if (state.currentScene >= 5) {
+                    if (elapsed >= 408.0) { posArr[i3+1] = -5000; if (i === 0) { material.opacity = 0; bloomPass.strength = 0; renderer.setClearColor(0x000000, 1); document.getElementById('ui-layer').style.opacity = "0"; } continue; }
+                    if (!s5VisibleIndices.includes(jarIdx)) { posArr[i3+1] = -5000; continue; }
+                } else if (state.currentScene !== 1 && jarIdx >= state.visibleCount) { posArr[i3+1] = -5000; continue; }
+
+                let bx, by, bz;
+                let off = new THREE.Vector3().copy(state.jarOffsets[jarIdx]);
+
+                if (state.currentScene === 1) {
+                    const pt = getJarPoint('generaljar', particleParams[i*2], particleParams[i*2+1]);
+                    const s = 9 + audioAvg * 10.0; 
+                    bx = pt.x * s; by = pt.y * 9; bz = pt.z * s;
+                    off.set(0,0,0);
+                    colArr[i3] = 0.2 + audioAvg; colArr[i3+1] = 0.3 + audioAvg; colArr[i3+2] = 0.9;
+                    bloomPass.strength = 1.5 + audioAvg * 5.0;
+                } 
+                else {
+                    bx = basePositions[i3]; by = basePositions[i3+1]; bz = basePositions[i3+2];
+                    
+                    if (state.currentScene === 2 || state.currentScene === 3) {
+                        const w = state.currentWeights[jarIdx];
+                        if (i % perJar === 0) state.currentWeights[jarIdx] += (state.targetWeights[jarIdx] - state.currentWeights[jarIdx]) * 0.05;
+                        
+                        // 保持 Scene 2 的位移响应方式
+                        const dp = audioAvg * 20 * w;
+                        bx += Math.sin(elapsed * 4 + jarIdx) * dp; by += Math.cos(elapsed * 3.5 + jarIdx) * dp; bz += Math.sin(elapsed * 4.2 + jarIdx) * dp;
+                        
+                        if (state.currentScene === 3) {
+                            if (i % perJar === 0) {
+                                const torque = audioAvg * 0.15 * w;
+                                state.jarAngVelocities[jarIdx].x += (Math.random() - 0.5) * torque; state.jarAngVelocities[jarIdx].z += (Math.random() - 0.5) * torque;
+                                state.jarTilts[jarIdx].add(state.jarAngVelocities[jarIdx]); state.jarAngVelocities[jarIdx].add(state.jarTilts[jarIdx].clone().multiplyScalar(-0.006));
+                                state.jarAngVelocities[jarIdx].multiplyScalar(0.95); state.jarTilts[jarIdx].multiplyScalar(0.996);
+                            }
+                            const tempV = new THREE.Vector3(bx, by, bz).applyEuler(new THREE.Euler(state.jarTilts[jarIdx].x, 0, state.jarTilts[jarIdx].z));
+                            bx = tempV.x; by = tempV.y; bz = tempV.z;
+                            off.lerp(new THREE.Vector3(0,0,0), state.pinchStrength);
+                        }
+                        const sc = 4.0; bx *= sc; by *= sc; bz *= sc;
+                        colArr[i3] = 0.4 + audioAvg; colArr[i3+1] = 0.5; colArr[i3+2] = 1.0;
+                        bloomPass.strength = 1.2 + audioAvg * 3.5;
+                    }
+                    else if (state.currentScene === 4) {
+                        const scaledV = new THREE.Vector3(bx * 2.8 * state.jarBaseScales[jarIdx], by * 2.8 * state.jarBaseScales[jarIdx], bz * 2.8 * state.jarBaseScales[jarIdx]);
+                        scaledV.multiplyScalar(1.0 + audioAvg * 0.3).applyEuler(state.jarRotations[jarIdx]);
+                        bx = scaledV.x; by = scaledV.y; bz = scaledV.z;
+                        const shat = state.jarShatter[jarIdx];
+                        if (shat > 0.01) {
+                            const shardId = Math.floor(i / 180); 
+                            const shardOff = new THREE.Vector3(Math.sin(shardId), Math.cos(shardId*1.2), Math.sin(shardId*0.8)).multiplyScalar(shat * 20);
+                            bx += shardOff.x; by += shardOff.y; bz += shardOff.z;
+                            if (i % perJar === 0) state.jarShatter[jarIdx] *= 0.82;
+                        }
+                        const tempCol = s4Colors[0].clone().lerp(s4Colors[1], (Math.sin(elapsed * 0.3 + jarIdx * 0.5)+1)/2);
+                        colArr[i3] = tempCol.r + audioAvg; colArr[i3+1] = tempCol.g; colArr[i3+2] = tempCol.b;
+                        bloomPass.strength = 1.2 + audioAvg * 3.5;
+                    }
+                    else if (state.currentScene === 5) {
+                        const sluggish = audioAvg * (1.0 - s5Progress * 0.85);
+                        const finalSc = s5DynamicScale * (1.0 + sluggish * 0.12);
+                        const diss = Math.pow(s5Progress, 2.5) * 38.0; 
+                        bx = bx * finalSc + (Math.sin(i * 0.01) * diss); by = by * finalSc + (Math.cos(i * 0.012) * diss); bz = bz * finalSc + (Math.sin(i * 0.008) * diss);
+                        const baseCol = s4Colors[0].clone().lerp(s4Colors[1], (Math.sin(elapsed * 0.3 + jarIdx * 0.5)+1)/2).lerp(new THREE.Color(0x00f2ff), s5ColFactor);
+                        const fd = 1.0 - Math.pow(s5Progress, 6.0);
+                        colArr[i3] = (baseCol.r + audioAvg) * fd; colArr[i3+1] = (baseCol.g + audioAvg) * fd; colArr[i3+2] = (baseCol.b + audioAvg) * fd;
+                        if (elapsed > 407.2 && elapsed < 408.0) { material.opacity = Math.max(0, 1.0 - (elapsed - 407.2) * 2.5); bloomPass.strength = 0.5 + Math.abs(Math.sin((elapsed - 407.2) * 18.0)) * 10.0; } 
+                        else { bloomPass.strength = 1.2 * Math.sqrt(1.0 - s5Progress); material.opacity = 1.0; }
+                    }
+                }
+
+                posArr[i3] += (bx + off.x - posArr[i3]) * 0.16;
+                posArr[i3+1] += (by + off.y - posArr[i3+1]) * 0.16;
+                posArr[i3+2] += (bz + off.z - posArr[i3+2]) * 0.16;
+            }
+            geometry.attributes.position.needsUpdate = true; geometry.attributes.color.needsUpdate = true;
+            controls.update(); composer.render();
+        }
+
+        function startHandTracking() {
+            const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+            hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.75 });
+            hands.onResults((results) => {
+                if (state.currentScene === 2) { state.pinchStrength = 0; state.prevHandX = null; state.prevHandY = null; state.isReadyToShuffle = false; return; }
+                if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                    const lm = results.multiHandLandmarks[0];
+                    const pd = Math.hypot(lm[8].x - lm[4].x, lm[8].y - lm[4].y);
+                    state.pinchStrength = THREE.MathUtils.smoothstep(0.22 - pd, 0, 0.16);
+                    if (state.currentScene === 3) { if (state.pinchStrength > 0.45) state.isReadyToShuffle = true; else if (state.isReadyToShuffle && state.pinchStrength < 0.15) { reshuffleGrid(); state.isReadyToShuffle = false; } }
+                    if (!(state.currentScene === 4 && state.qPressed) && state.currentScene !== 3 && state.currentScene < 5 && state.prevHandX !== null) { state.rotationMomentumX += (lm[9].x - state.prevHandX) * -0.4; state.rotationMomentumY += (lm[9].y - state.prevHandY) * -0.2; }
+                    state.prevHandX = lm[9].x; state.prevHandY = lm[9].y;
+                } else { state.pinchStrength = 0; state.prevHandX = null; state.prevHandY = null; state.isReadyToShuffle = false; }
+            });
+            new Camera(document.getElementById('webcam'), { onFrame: async () => { await hands.send({image: document.getElementById('webcam')}); }, width: 320, height: 240 }).start();
+        }
+
+        function setupKeyboard() { 
+            window.addEventListener('keydown', (e) => { 
+                if (e.key >= '1' && e.key <= '5') triggerScene(parseInt(e.key)); 
+                if (e.key.toLowerCase() === 'q') state.qPressed = true;
+                if (e.key.toLowerCase() === 'f') {
+                    if (!document.fullscreenElement) { document.documentElement.requestFullscreen().then(() => { setTimeout(onWindowResize, 100); }); document.body.classList.add('fullscreen-active'); } 
+                    else { if (document.exitFullscreen) { document.exitFullscreen().then(() => { setTimeout(onWindowResize, 100); }); document.body.classList.remove('fullscreen-active'); } }
+                }
+            }); 
+            window.addEventListener('keyup', (e) => { if (e.key.toLowerCase() === 'q') state.qPressed = false; });
+        }
+        function setupUI() {
+            document.getElementById('audio-file').onchange = (e) => {
+                const reader = new FileReader();
+                reader.onload = (ev) => { audio.context.decodeAudioData(ev.target.result, (buf) => { audio.setBuffer(buf); audio.offset = 0; audio.play(); state.startTime = audio.context.currentTime; isPlaying = true; state.audioIsReady = true; }); };
+                reader.readAsArrayBuffer(e.target.files[0]);
+            };
+        }
+    </script>
+</body>
+</html> -->
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Living Pottery - Chinese Heritage Edition</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        :root {
+            --accent: #ffaa00; 
+            --bg-panel: rgba(10, 8, 5, 0.95);
+            --border: rgba(255, 180, 100, 0.3);
+            --mode-scene: #00f2ff;
+        }
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', sans-serif; color: white; user-select: none; }
+        #canvas-container { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; display: block; }
+        #ui-layer { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; transition: opacity 0.5s; }
+        .panel { pointer-events: auto; background: var(--bg-panel); backdrop-filter: blur(25px); border: 1px solid var(--border); border-radius: 16px; padding: 24px; position: absolute; }
+        .left-panel { top: 20px; left: 20px; width: 300px; box-shadow: 0 10px 50px #000; }
+        h2 { margin: 0; font-size: 1.2rem; background: linear-gradient(90deg, #fff, var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .level-badge { font-size: 0.9rem; font-weight: 800; text-align: center; padding: 12px; border-radius: 10px; background: rgba(0, 242, 255, 0.15); border: 1px solid var(--mode-scene); }
+        .sub-text { font-size: 0.65rem; font-weight: normal; opacity: 0.8; display: block; margin-top: 4px; }
+        .btn { background: linear-gradient(135deg, #e67e22, #d35400); border: 1px solid var(--border); color: white; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: 600; text-align: center; width: 100%; margin-top: 10px; }
+        .cam-box { position: fixed; bottom: 20px; right: 20px; width: 180px; height: 135px; background: black; border-radius: 12px; border: 1px solid var(--border); z-index: 20; opacity: 0.4; }
+        #time-info { position: absolute; bottom: 30px; left: 30px; font-family: 'Courier New', monospace; color: var(--accent); font-size: 1.8rem; font-weight: bold; }
+        .key-hint { color: var(--accent); font-weight: bold; background: rgba(255, 255, 255, 0.1); padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; }
+        .fullscreen-active #ui-layer, .fullscreen-active .cam-box { display: none !important; }
+        .fullscreen-active { cursor: none; }
+    </style>
+    
+    <script type="importmap">
+    { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
+    </script>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <div class="panel left-panel">
+            <h2>🏺 Chinese Heritage Pottery</h2>
+            <div id="scene-display" class="level-badge">SCENE 1<span class="sub-text">ENERGY INFUSION</span></div>
+            <div style="font-size: 0.85rem; color: #ddd; margin-top: 15px;">
+                <span id="scene-desc">Initialising...</span>
+                <div style="margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px;">
+                    <span class="key-hint">1-5</span> Scene Selection<br>
+                    <span class="key-hint">Q</span> Hold for Level Circle (S4)<br>
+                    <span class="key-hint">F</span> Toggle Fullscreen Mode<br>
+                    <span id="pinch-label" style="color:#00f2ff; font-weight: bold; font-size: 0.8rem;">PINCH TO CONTROL GRID</span>
+                </div>
+            </div>
+            <button class="btn" onclick="document.getElementById('audio-file').click()">📂 Load MP3 Track</button>
+            <input type="file" id="audio-file" accept="audio/*" style="display: none;">
+        </div>
+        <div id="time-info">00:00 / 00:00</div>
+    </div>
+
+    <div class="cam-box"><video id="webcam" playsinline style="width:100%; height:100%; object-fit:cover; transform:scaleX(-1);"></video></div>
+    <div id="canvas-container"></div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+        const state = {
+            currentScene: 0, startTime: 0, visibleCount: 1,
+            jarOffsets: Array(10).fill().map(() => new THREE.Vector3()),
+            targetWeights: Array(10).fill(0),   
+            currentWeights: Array(10).fill(0),  
+            lastSwitchTime: 0,
+            jarTilts: Array(10).fill().map(() => new THREE.Vector3()), 
+            jarAngVelocities: Array(10).fill().map(() => new THREE.Vector3()), 
+            jarShatter: Array(10).fill(0),
+            jarVelocities: Array(10).fill().map(() => new THREE.Vector3()),
+            jarBaseScales: Array(10).fill(1),
+            jarRotations: Array(10).fill().map(() => new THREE.Euler()), 
+            jarSpinSpeeds: Array(10).fill().map(() => new THREE.Vector3()), 
+            qPressed: false, 
+            pinchStrength: 0, isReadyToShuffle: false,
+            audioIsReady: false, prevAudioAvg: 0,
+            prevHandX: null, prevHandY: null, rotationMomentumX: 0, rotationMomentumY: 0
+        };
+
+        const timeline = [
+            { id: 1, start: 0, end: 70, name: "ENERGY INFUSION", desc: "Single Massive Jar Response" },
+            { id: 2, start: 70, end: 130, name: "SELECTIVE BREAKOUT", desc: "Redistributed Displacement" },
+            { id: 3, start: 130, end: 200, name: "SYSTEM IMBALANCE", desc: "Angular Instability" },
+            { id: 4, start: 200, end: 320, name: "DYNAMIC SYNC FIELD", desc: "Lock View & Horizontal Circle" },
+            { id: 5, start: 320, end: 408, name: "RESIDUAL DISSIPATION", desc: "Energy Exhaustion & Residual Impression" },
+            { id: 6, start: 408, end: 9999, name: "VOID", desc: "Total Silence" }
+        ];
+
+        let scene, camera, renderer, composer, bloomPass, controls, particles, geometry, material, basePositions, particleParams, audio, analyser, isPlaying = false;
+        const mainCount = 130000;
+        const shapeList = ['generaljar', 'yuhuchun', 'tianqiu', 'cong', 'garlic', 'moonflask', 'meiping', 'gu', 'malan', 'zun'];
+        const s4Colors = [new THREE.Color(0xffaa00), new THREE.Color(0x00f2ff)];
+
+        init();
+
+        // New helper to create Heritage Patterns (Flowers, Birds, Fish, Insects)
+        function getHeritagePattern(theta, h, jarIdx) {
+            let mask = 0;
+            const normH = (h + 10) / 20; // 0 to 1
+            
+            // 1. Top/Bottom Ruyi Borders (Exquisite geometric borders)
+            if (normH > 0.85 || normH < 0.15) {
+                mask = Math.sin(theta * 24) > 0.3 ? 0.8 : 0;
+            }
+
+            // 2. Main Body Motifs (Based on Jar Index to vary patterns)
+            const type = jarIdx % 4;
+            if (normH > 0.2 && normH < 0.8) {
+                if (type === 0) { // Floral Scrolls (Peony/Lotus)
+                    mask += Math.pow(Math.abs(Math.sin(theta * 3 + h * 0.5) * Math.cos(h * 0.8)), 2.0);
+                } else if (type === 1) { // Fish in Waves
+                    mask += (Math.sin(theta * 6 + h) > 0.7 && Math.sin(h * 2) > 0.2) ? 0.9 : 0;
+                    mask += Math.sin(theta * 20 + h * 5) * 0.2; // Small ripples
+                } else if (type === 2) { // Birds and Branches
+                    const branch = Math.abs(theta % 1.5 - 0.75) < 0.05 + Math.sin(h)*0.02;
+                    const bird = (Math.hypot(theta % 1.5 - 0.75, normH - 0.5) < 0.08);
+                    mask += (branch || bird) ? 1.0 : 0;
+                } else { // Insects (Butterflies) and Grass
+                    const butterfly = Math.sin(theta * 10) * Math.cos(h * 5) > 0.85;
+                    const grass = Math.sin(theta * 50 + h * 2) * Math.exp(-Math.pow(normH-0.2, 2)*50) > 0.5;
+                    mask += (butterfly || grass) ? 1.0 : 0;
+                }
+            }
+            return Math.min(1.0, mask);
+        }
+
+        function getJarPoint(shape, theta, h) {
+            let r;
+            const targetH = 20;
+            switch(shape) {
+                case 'generaljar': {
+                    const s = 1.25; const localH = h / s;
+                    if (localH > 6) r = (2.0 + Math.cos((localH - 7) * 1.5) * 1.8) * s;
+                    else if (localH > 4) r = 2.2 * s;
+                    else { let normH = (localH + 8) / 12; r = (2.5 + 5.0 * Math.sin(normH * Math.PI * 0.7)) * s; }
+                    break;
+                }
+                case 'meiping': r = (h < 5) ? 5.5 * Math.cos(h * 0.12) : 5.5 * Math.cos(5 * 0.12) * Math.exp(-(h-5)*0.5); break;
+                case 'yuhuchun': { const s = 20 / 22; const localH = h / s; r = ((localH < -2) ? 6 * Math.cos((localH+6)*0.15) : 1.5 + 4.5 * Math.exp(-(localH+2)*0.3)) * s; break; }
+                case 'tianqiu': r = (h < 2) ? Math.sqrt(Math.max(0, 64 - Math.pow(h+4, 2))) : 1.8; break;
+                case 'cong': { const side = 4.5; r = side / Math.max(Math.abs(Math.cos(theta)), Math.abs(Math.sin(theta))); if (h > 8 || h < -8) r *= 0.8; break; }
+                case 'garlic': { const s = 20 / 24; const localH = h / s; if (localH > 9) r = (2.5 * Math.cos((localH-10))) * s; else if (localH > 0) r = 1.2 * s; else r = (5.5 * Math.cos((localH+4)*0.18)) * s; break; }
+                case 'moonflask': { const s = 20 / 18; const localH = h / s; let rad = (localH < 4) ? Math.sqrt(Math.max(0, 49 - Math.pow(localH+2, 2))) : 1.5; let thickness = 0.4 + 0.6 * Math.abs(Math.sin(theta)); r = rad * thickness * s; break; }
+                case 'gu': { const s = 20 / 18; const localH = h / s; r = (2.0 + Math.pow(Math.abs(localH)/10, 2.5) * 2.5) * s; break; }
+                case 'malan': r = (h > 2) ? 1.2 : 5.5 * Math.exp(-(Math.pow(h+5, 2))/40); break;
+                case 'zun': { const s = 20 / 18; const localH = h / s; r = (4 + 2 * Math.sin(localH * 0.4)) * s; break; }
+                default: r = 5;
+            }
+            const relief = 1 + 0.06 * Math.sin(theta * 12 + h * 0.5) * Math.cos(theta * 8 - h);
+            r *= relief;
+            return { x: r * Math.cos(theta), y: h, z: r * Math.sin(theta) };
+        }
+
+        function init() {
+            const container = document.getElementById('canvas-container');
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 4000);
+            camera.position.set(0, 0, 320);
+
+            renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            container.appendChild(renderer.domElement);
+
+            bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 2.2, 0.4, 0.05);
+            composer = new EffectComposer(renderer);
+            composer.addPass(new RenderPass(scene, camera));
+            composer.addPass(bloomPass);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+
+            const listener = new THREE.AudioListener();
+            camera.add(listener);
+            audio = new THREE.Audio(listener);
+            analyser = new THREE.AudioAnalyser(audio, 128);
+
+            initParticles();
+            setupUI();
+            setupKeyboard();
+            startHandTracking();
+            
+            window.addEventListener('resize', onWindowResize);
+            animate();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+            bloomPass.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function initParticles() {
+            geometry = new THREE.BufferGeometry();
+            const pos = new Float32Array(mainCount * 3), col = new Float32Array(mainCount * 3);
+            basePositions = new Float32Array(mainCount * 3);
+            particleParams = new Float32Array(mainCount * 2); 
+            const perShape = Math.floor(mainCount / shapeList.length);
+
+            for (let i = 0; i < mainCount; i++) {
+                const sIdx = Math.floor(i / perShape);
+                const theta = Math.random() * Math.PI * 2;
+                const h = ((i % perShape) / perShape - 0.5) * 20;
+                
+                particleParams[i*2] = theta;
+                particleParams[i*2+1] = h;
+
+                const pt = getJarPoint(shapeList[sIdx], theta, h);
+                basePositions[i*3] = pt.x; basePositions[i*3+1] = pt.y; basePositions[i*3+2] = pt.z;
+            }
+            geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(col, 3));
+            material = new THREE.PointsMaterial({ size: 0.35, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 1.0, map: new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/disc.png') });
+            particles = new THREE.Points(geometry, material);
+            scene.add(particles);
+        }
+
+        function reshuffleGrid() {
+            const slots = [];
+            for(let y=-1; y<=1; y++) for(let x=-1; x<=1; x++) slots.push(new THREE.Vector3(x*180, y*100, 0));
+            slots.sort(() => Math.random() - 0.5);
+            for(let i=0; i<6; i++) state.jarOffsets[i].copy(slots[i]);
+        }
+
+        function pickRandomJars() {
+            state.targetWeights.fill(0);
+            let selected = 0; 
+            const targetCount = Math.floor(Math.random() * 2) + 1; 
+            while(selected < targetCount) {
+                const idx = Math.floor(Math.random() * 6); 
+                if(state.targetWeights[idx] === 0) { 
+                    state.targetWeights[idx] = 1; 
+                    selected++; 
+                }
+            }
+        }
+
+        function triggerScene(id) {
+            const entry = timeline.find(t => t.id === id);
+            if (!entry || !state.audioIsReady) return;
+            if (audio.isPlaying) audio.stop();
+            audio.offset = entry.start; audio.play(); 
+            state.startTime = audio.context.currentTime - entry.start;
+            isPlaying = true; state.currentScene = id;
+            updateVisualParams(id, entry);
+            document.getElementById('ui-layer').style.opacity = "1";
+        }
+
+        function updateVisualParams(id, entry) {
+            document.getElementById('scene-display').innerHTML = `SCENE ${id}<span class="sub-text">${entry.name}</span>`;
+            document.getElementById('scene-desc').innerText = entry.desc;
+            material.opacity = 1.0; 
+
+            if (id === 1) { 
+                state.visibleCount = 1; 
+                state.jarOffsets[0].set(0,0,0); 
+                state.targetWeights.fill(0);
+                state.targetWeights[0] = 1;
+            }
+            else if (id === 2 || id === 3) {
+                state.visibleCount = 6;
+                if (id === 3) reshuffleGrid();
+                else for(let i=0; i<6; i++) state.jarOffsets[i].set((i%3-1)*140, (Math.floor(i/3)-0.5)*-160, 0);
+                state.lastSwitchTime = (audio.isPlaying) ? audio.context.currentTime - state.startTime : 0;
+                pickRandomJars();
+            } else if (id === 4) {
+                state.visibleCount = 10;
+                for(let i=0; i<10; i++) {
+                    state.jarOffsets[i].set((Math.random()-0.5)*180, (Math.random()-0.5)*100, 0);
+                    state.jarVelocities[i].set((Math.random()-0.5), (Math.random()-0.5), (Math.random()-0.5)).normalize().multiplyScalar(0.4);
+                    state.jarBaseScales[i] = 1.0 + Math.random() * 0.4;
+                    state.jarSpinSpeeds[i].set((Math.random()-0.5)*0.04, (Math.random()-0.5)*0.08, (Math.random()-0.5)*0.04);
+                }
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            let elapsed = isPlaying ? audio.context.currentTime - state.startTime : 0;
+            const entry = timeline.find(t => elapsed >= t.start && elapsed < t.end);
+            if (entry && state.currentScene !== entry.id) { state.currentScene = entry.id; updateVisualParams(entry.id, entry); }
+            
+            if (audio.buffer) {
+                const total = audio.buffer.duration;
+                document.getElementById('time-info').innerText = `${Math.floor(elapsed/60).toString().padStart(2,'0')}:${Math.floor(elapsed%60).toString().padStart(2,'0')} / ${Math.floor(total/60).toString().padStart(2,'0')}:${Math.floor(total%60).toString().padStart(2,'0')}`;
+            }
+
+            let audioAvg = isPlaying ? analyser.getAverageFrequency() / 255 : 0;
+
+            if ((state.currentScene === 2 || state.currentScene === 3) && isPlaying) {
+                if (elapsed - state.lastSwitchTime > 4.2) { 
+                    pickRandomJars(); 
+                    state.lastSwitchTime = elapsed; 
+                }
+            }
+
+            if (state.currentScene === 4 && state.qPressed) {
+                particles.rotation.y *= 0.88; particles.rotation.x *= 0.88;
+                state.rotationMomentumX = 0; state.rotationMomentumY = 0;
+                controls.enableRotate = false;
+            } else if (state.currentScene < 5 && state.currentScene !== 3 && state.currentScene !== 2) {
+                particles.rotation.y += state.rotationMomentumX; particles.rotation.x += state.rotationMomentumY;
+                controls.enableRotate = true;
+            } else {
+                particles.rotation.y *= 0.93; particles.rotation.x *= 0.93;
+                controls.enableRotate = true;
+            }
+            state.rotationMomentumX *= 0.95; state.rotationMomentumY *= 0.95;
+
+            if (state.currentScene === 4) {
+                const delta = audioAvg - state.prevAudioAvg;
+                if (delta > 0.05 || (audioAvg > 0.45 && Math.random() > 0.97)) {
+                    const count = Math.floor(Math.random() * 2) + 1; 
+                    for(let k=0; k<count; k++) { state.jarShatter[Math.floor(Math.random() * 10)] = 1.0; }
+                }
+                const moveSpeed = 0.5 + audioAvg * 3.0;
+                for(let i=0; i<10; i++) {
+                    if (state.qPressed) {
+                        const t = elapsed * 0.4; const radius = 140; const angleOffset = (i * Math.PI * 2) / 10;
+                        state.jarOffsets[i].lerp(new THREE.Vector3(Math.cos(t + angleOffset) * radius, 0, Math.sin(t + angleOffset) * radius), 0.05);
+                        state.jarRotations[i].set(state.jarRotations[i].x*0.88, state.jarRotations[i].y*0.88, state.jarRotations[i].z*0.88);
+                    } else {
+                        state.jarOffsets[i].add(state.jarVelocities[i].clone().multiplyScalar(moveSpeed));
+                        if (Math.abs(state.jarOffsets[i].x) > 200) state.jarVelocities[i].x *= -1;
+                        if (Math.abs(state.jarOffsets[i].y) > 120) state.jarVelocities[i].y *= -1;
+                        if (Math.abs(state.jarOffsets[i].z) > 100) state.jarVelocities[i].z *= -1;
+                        const sb = 0.5 + audioAvg * 2.0;
+                        state.jarRotations[i].x += state.jarSpinSpeeds[i].x * sb; state.jarRotations[i].y += state.jarSpinSpeeds[i].y * sb; state.jarRotations[i].z += state.jarSpinSpeeds[i].z * sb;
+                    }
+                }
+            }
+            
+            state.prevAudioAvg = audioAvg;
+            const posArr = geometry.attributes.position.array, colArr = geometry.attributes.color.array, perJar = Math.floor(mainCount / 10);
+
+            let s5Progress = 0, s5DynamicScale = 2.8, s5ColFactor = 0, s5VisibleIndices = [];
+            if (state.currentScene >= 5) {
+                const s5Elapsed = elapsed - 320;
+                s5Progress = Math.min(s5Elapsed / 88, 1.0);
+                s5ColFactor = THREE.MathUtils.smoothstep(s5Elapsed, 5.0, 18.0); 
+                if (s5Elapsed < 30) { s5VisibleIndices = [0,1,2,3,4,5,6,7,8]; s5DynamicScale = 2.8; for(let i=0; i<9; i++) state.jarOffsets[i].lerp(new THREE.Vector3((i%3-1)*105, (Math.floor(i/3)-1)*115, 0), 0.025); }
+                else if (s5Elapsed < 55) { s5VisibleIndices = [0,2,6,8]; s5DynamicScale = 3.8; state.jarOffsets[0].lerp(new THREE.Vector3(-80, -80, 0), 0.04); state.jarOffsets[2].lerp(new THREE.Vector3(80, -80, 0), 0.04); state.jarOffsets[6].lerp(new THREE.Vector3(-80, 80, 0), 0.04); state.jarOffsets[8].lerp(new THREE.Vector3(80, 80, 0), 0.04); }
+                else if (s5Elapsed < 75) { s5VisibleIndices = [0,8]; s5DynamicScale = 5.2; state.jarOffsets[0].lerp(new THREE.Vector3(-105, 0, 0), 0.05); state.jarOffsets[8].lerp(new THREE.Vector3(105, 0, 0), 0.05); }
+                else { s5VisibleIndices = [0]; s5DynamicScale = 6.8; state.jarOffsets[0].lerp(new THREE.Vector3(0, 0, 0), 0.05); }
+            }
+
+            for (let i = 0; i < mainCount; i++) {
+                const i3 = i * 3, jarIdx = Math.floor(i / perJar);
+                const theta = particleParams[i*2], h = particleParams[i*2+1];
+
+                if (state.currentScene >= 5) {
+                    if (elapsed >= 408.0) { posArr[i3+1] = -5000; if (i === 0) { material.opacity = 0; bloomPass.strength = 0; renderer.setClearColor(0x000000, 1); document.getElementById('ui-layer').style.opacity = "0"; } continue; }
+                    if (!s5VisibleIndices.includes(jarIdx)) { posArr[i3+1] = -5000; continue; }
+                } else if (state.currentScene !== 1 && jarIdx >= state.visibleCount) { posArr[i3+1] = -5000; continue; }
+
+                let bx, by, bz;
+                let off = new THREE.Vector3().copy(state.jarOffsets[jarIdx]);
+
+                // Pattern logic
+                const patternMask = getHeritagePattern(theta, h, jarIdx);
+
+                if (state.currentScene === 1) {
+                    const pt = getJarPoint('generaljar', theta, h);
+                    const s = 9 + audioAvg * 10.0; 
+                    bx = pt.x * s; by = pt.y * 9; bz = pt.z * s;
+                    off.set(0,0,0);
+                    
+                    // Rule: Jar is Blue, Pattern is Orange
+                    if (patternMask > 0.5) { // Orange Pattern
+                        colArr[i3] = 1.0; colArr[i3+1] = 0.5 + audioAvg; colArr[i3+2] = 0.0;
+                    } else { // Blue Base
+                        colArr[i3] = 0.1 + audioAvg; colArr[i3+1] = 0.2 + audioAvg; colArr[i3+2] = 0.9;
+                    }
+                    bloomPass.strength = 1.5 + audioAvg * 5.0;
+                } 
+                else {
+                    bx = basePositions[i3]; by = basePositions[i3+1]; bz = basePositions[i3+2];
+                    
+                    if (state.currentScene === 2 || state.currentScene === 3) {
+                        const w = state.currentWeights[jarIdx];
+                        if (i % perJar === 0) state.currentWeights[jarIdx] += (state.targetWeights[jarIdx] - state.currentWeights[jarIdx]) * 0.05;
+                        const dp = audioAvg * 20 * w;
+                        bx += Math.sin(elapsed * 4 + jarIdx) * dp; by += Math.cos(elapsed * 3.5 + jarIdx) * dp; bz += Math.sin(elapsed * 4.2 + jarIdx) * dp;
+                        
+                        if (state.currentScene === 3) {
+                            if (i % perJar === 0) {
+                                const torque = audioAvg * 0.15 * w;
+                                state.jarAngVelocities[jarIdx].x += (Math.random() - 0.5) * torque; state.jarAngVelocities[jarIdx].z += (Math.random() - 0.5) * torque;
+                                state.jarTilts[jarIdx].add(state.jarAngVelocities[jarIdx]); state.jarAngVelocities[jarIdx].add(state.jarTilts[jarIdx].clone().multiplyScalar(-0.006));
+                                state.jarAngVelocities[jarIdx].multiplyScalar(0.95); state.jarTilts[jarIdx].multiplyScalar(0.996);
+                            }
+                            const tempV = new THREE.Vector3(bx, by, bz).applyEuler(new THREE.Euler(state.jarTilts[jarIdx].x, 0, state.jarTilts[jarIdx].z));
+                            bx = tempV.x; by = tempV.y; bz = tempV.z;
+                            off.lerp(new THREE.Vector3(0,0,0), state.pinchStrength);
+                        }
+                        const sc = 4.0; bx *= sc; by *= sc; bz *= sc;
+
+                        // Scene 2/3: Predominantly Blue with Orange patterns
+                        if (patternMask > 0.5) {
+                            colArr[i3] = 1.0; colArr[i3+1] = 0.6; colArr[i3+2] = 0.2;
+                        } else {
+                            colArr[i3] = 0.2 + audioAvg; colArr[i3+1] = 0.4; colArr[i3+2] = 1.0;
+                        }
+                        bloomPass.strength = 1.2 + audioAvg * 3.5;
+                    }
+                    else if (state.currentScene === 4) {
+                        const scaledV = new THREE.Vector3(bx * 2.8 * state.jarBaseScales[jarIdx], by * 2.8 * state.jarBaseScales[jarIdx], bz * 2.8 * state.jarBaseScales[jarIdx]);
+                        scaledV.multiplyScalar(1.0 + audioAvg * 0.3).applyEuler(state.jarRotations[jarIdx]);
+                        bx = scaledV.x; by = scaledV.y; bz = scaledV.z;
+                        const shat = state.jarShatter[jarIdx];
+                        if (shat > 0.01) {
+                            const shardId = Math.floor(i / 180); 
+                            const shardOff = new THREE.Vector3(Math.sin(shardId), Math.cos(shardId*1.2), Math.sin(shardId*0.8)).multiplyScalar(shat * 20);
+                            bx += shardOff.x; by += shardOff.y; bz += shardOff.z;
+                            if (i % perJar === 0) state.jarShatter[jarIdx] *= 0.82;
+                        }
+                        
+                        // Dynamic logic for S4
+                        const isOrangeJar = (Math.sin(elapsed * 0.3 + jarIdx * 0.5) > 0);
+                        if (isOrangeJar) {
+                            // Orange Jar -> Blue Pattern
+                            if (patternMask > 0.5) { colArr[i3] = 0.0; colArr[i3+1] = 0.9; colArr[i3+2] = 1.0; }
+                            else { colArr[i3] = 1.0; colArr[i3+1] = 0.6; colArr[i3+2] = 0.0; }
+                        } else {
+                            // Blue Jar -> Orange Pattern
+                            if (patternMask > 0.5) { colArr[i3] = 1.0; colArr[i3+1] = 0.6; colArr[i3+2] = 0.0; }
+                            else { colArr[i3] = 0.0; colArr[i3+1] = 0.9; colArr[i3+2] = 1.0; }
+                        }
+                        bloomPass.strength = 1.2 + audioAvg * 3.5;
+                    }
+                    else if (state.currentScene === 5) {
+                        const sluggish = audioAvg * (1.0 - s5Progress * 0.85);
+                        const finalSc = s5DynamicScale * (1.0 + sluggish * 0.12);
+                        const diss = Math.pow(s5Progress, 2.5) * 38.0; 
+                        bx = bx * finalSc + (Math.sin(i * 0.01) * diss); by = by * finalSc + (Math.cos(i * 0.012) * diss); bz = bz * finalSc + (Math.sin(i * 0.008) * diss);
+                        
+                        const fd = 1.0 - Math.pow(s5Progress, 6.0);
+                        if (patternMask > 0.5) {
+                            colArr[i3] = (1.0) * fd; colArr[i3+1] = (0.6) * fd; colArr[i3+2] = (0.2) * fd;
+                        } else {
+                            colArr[i3] = (0.0) * fd; colArr[i3+1] = (0.8) * fd; colArr[i3+2] = (1.0) * fd;
+                        }
+
+                        if (elapsed > 407.2 && elapsed < 408.0) { material.opacity = Math.max(0, 1.0 - (elapsed - 407.2) * 2.5); bloomPass.strength = 0.5 + Math.abs(Math.sin((elapsed - 407.2) * 18.0)) * 10.0; } 
+                        else { bloomPass.strength = 1.2 * Math.sqrt(1.0 - s5Progress); material.opacity = 1.0; }
+                    }
+                }
+
+                posArr[i3] += (bx + off.x - posArr[i3]) * 0.16;
+                posArr[i3+1] += (by + off.y - posArr[i3+1]) * 0.16;
+                posArr[i3+2] += (bz + off.z - posArr[i3+2]) * 0.16;
+            }
+            geometry.attributes.position.needsUpdate = true; geometry.attributes.color.needsUpdate = true;
+            controls.update(); composer.render();
+        }
+
+        function startHandTracking() {
+            const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+            hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.75 });
+            hands.onResults((results) => {
+                if (state.currentScene === 2) { state.pinchStrength = 0; state.prevHandX = null; state.prevHandY = null; state.isReadyToShuffle = false; return; }
+                if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                    const lm = results.multiHandLandmarks[0];
+                    const pd = Math.hypot(lm[8].x - lm[4].x, lm[8].y - lm[4].y);
+                    state.pinchStrength = THREE.MathUtils.smoothstep(0.22 - pd, 0, 0.16);
+                    if (state.currentScene === 3) { if (state.pinchStrength > 0.45) state.isReadyToShuffle = true; else if (state.isReadyToShuffle && state.pinchStrength < 0.15) { reshuffleGrid(); state.isReadyToShuffle = false; } }
+                    if (!(state.currentScene === 4 && state.qPressed) && state.currentScene !== 3 && state.currentScene < 5 && state.prevHandX !== null) { state.rotationMomentumX += (lm[9].x - state.prevHandX) * -0.4; state.rotationMomentumY += (lm[9].y - state.prevHandY) * -0.2; }
+                    state.prevHandX = lm[9].x; state.prevHandY = lm[9].y;
+                } else { state.pinchStrength = 0; state.prevHandX = null; state.prevHandY = null; state.isReadyToShuffle = false; }
+            });
+            new Camera(document.getElementById('webcam'), { onFrame: async () => { await hands.send({image: document.getElementById('webcam')}); }, width: 320, height: 240 }).start();
+        }
+
+        function setupKeyboard() { 
+            window.addEventListener('keydown', (e) => { 
+                if (e.key >= '1' && e.key <= '5') triggerScene(parseInt(e.key)); 
+                if (e.key.toLowerCase() === 'q') state.qPressed = true;
+                if (e.key.toLowerCase() === 'f') {
+                    if (!document.fullscreenElement) { document.documentElement.requestFullscreen().then(() => { setTimeout(onWindowResize, 100); }); document.body.classList.add('fullscreen-active'); } 
+                    else { if (document.exitFullscreen) { document.exitFullscreen().then(() => { setTimeout(onWindowResize, 100); }); document.body.classList.remove('fullscreen-active'); } }
+                }
+            }); 
+            window.addEventListener('keyup', (e) => { if (e.key.toLowerCase() === 'q') state.qPressed = false; });
+        }
+        function setupUI() {
+            document.getElementById('audio-file').onchange = (e) => {
+                const reader = new FileReader();
+                reader.onload = (ev) => { audio.context.decodeAudioData(ev.target.result, (buf) => { audio.setBuffer(buf); audio.offset = 0; audio.play(); state.startTime = audio.context.currentTime; isPlaying = true; state.audioIsReady = true; }); };
+                reader.readAsArrayBuffer(e.target.files[0]);
+            };
+        }
+    </script>
+</body>
+</html>
+
