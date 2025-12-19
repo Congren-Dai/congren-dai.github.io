@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -394,3 +395,187 @@
     </script>
 </body>
 </html>
+
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pottery Catalogue - Print Edition</title>
+    <script type="importmap">
+    { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
+    </script>
+    <style>
+        :root { --accent: #ffaa00; --bg: #050505; }
+        body { margin: 0; background: var(--bg); color: white; font-family: 'Georgia', serif; overflow-x: hidden; }
+        
+        /* UI for Presentation */
+        #controls { position: fixed; top: 20px; left: 20px; z-index: 100; background: rgba(0,0,0,0.8); padding: 20px; border: 1px solid var(--accent); border-radius: 8px; width: 250px; }
+        .nav-btn { background: transparent; border: 1px solid var(--accent); color: var(--accent); padding: 8px; margin: 4px; cursor: pointer; width: 100%; text-align: left; transition: 0.3s; }
+        .nav-btn:hover { background: var(--accent); color: black; }
+        .nav-btn.active { background: var(--accent); color: black; font-weight: bold; }
+
+        /* Label for PDF Printing */
+        #info-panel { position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%); text-align: center; pointer-events: none; z-index: 50; }
+        h1 { margin: 0; font-size: 2.5rem; letter-spacing: 4px; text-transform: uppercase; color: var(--accent); }
+        p { opacity: 0.8; font-style: italic; margin-top: 10px; }
+
+        /* Print Settings */
+        @media print {
+            #controls { display: none; }
+            body { background: white; }
+            h1 { color: black; }
+            #canvas-container { filter: invert(1) hue-rotate(180deg); } /* Optimise for white paper */
+        }
+        #canvas-container { width: 100vw; height: 100vh; }
+    </style>
+</head>
+<body>
+
+    <div id="controls">
+        <h3 style="margin-top:0; color:var(--accent)">🏺 Catalogue</h3>
+        <div id="btn-list"></div>
+        <p style="font-size: 0.8rem;">Press <b>[P]</b> to Print to PDF<br>Use Mouse to Rotate</p>
+    </div>
+
+    <div id="info-panel">
+        <h1 id="vessel-name">General Jar</h1>
+        <p id="vessel-desc">A masterpiece of heritage design</p>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        const shapeList = [
+            { id: 'generaljar', name: 'General Jar', zh: '将军罐' },
+            { id: 'meiping', name: 'Meiping', zh: '梅瓶' },
+            { id: 'yuhuchun', name: 'Yuhuchun', zh: '玉壶春瓶' },
+            { id: 'tianqiu', name: 'Tianqiu', zh: '天球瓶' },
+            { id: 'cong', name: 'Cong', zh: '琮' },
+            { id: 'garlic', name: 'Garlic Head', zh: '蒜头瓶' },
+            { id: 'moonflask', name: 'Moonflask', zh: '抱月瓶' },
+            { id: 'gu', name: 'Gu', zh: '觚' },
+            { id: 'malan', name: 'Malan', zh: '马兰头' },
+            { id: 'zun', name: 'Zun', zh: '尊' }
+        ];
+
+        let currentIdx = 0;
+        let scene, camera, renderer, particles, geometry;
+        const mainCount = 130000;
+        const posArr = new Float32Array(mainCount * 3);
+        const colArr = new Float32Array(mainCount * 3);
+
+        function getJarPoint(shape, theta, h) {
+            let r;
+            switch(shape) {
+                case 'generaljar': { const s = 1.25, lh = h/s; if (lh > 6) r = (2+Math.cos((lh-7)*1.5)*1.8)*s; else if (lh > 4) r = 2.2*s; else r = (2.5+5*Math.sin((lh+8)/12*Math.PI*0.7))*s; break; }
+                case 'meiping': r = (h < 5) ? 5.5 * Math.cos(h * 0.12) : 5.5 * Math.cos(5 * 0.12) * Math.exp(-(h-5)*0.5); break;
+                case 'yuhuchun': { const s = 20/22, lh = h/s; r = (lh < -2 ? 6*Math.cos((lh+6)*0.15) : 1.5+4.5*Math.exp(-(lh+2)*0.3))*s; break; }
+                case 'tianqiu': r = (h < 2) ? Math.sqrt(Math.max(0, 64 - Math.pow(h+4, 2))) : 1.8; break;
+                case 'cong': r = 4.5 / Math.max(Math.abs(Math.cos(theta)), Math.abs(Math.sin(theta))); if (h > 8 || h < -8) r *= 0.8; break;
+                case 'garlic': { const s = 20/24, lh = h/s; if (lh > 9) r = (2.5*Math.cos(lh-10))*s; else if (lh > 0) r = 1.2*s; else r = (5.5*Math.cos((lh+4)*0.18))*s; break; }
+                case 'moonflask': { const s = 20/18, lh = h/s; let rd = lh < 4 ? Math.sqrt(Math.max(0, 49-Math.pow(lh+2, 2))) : 1.5; r = rd * (0.4+0.6*Math.abs(Math.sin(theta))) * s; break; }
+                case 'gu': r = (2.0 + Math.pow(Math.abs(h/1.11)/10, 2.5) * 2.5) * 1.11; break;
+                case 'malan': r = (h > 2) ? 1.2 : 5.5 * Math.exp(-(Math.pow(h+5, 2))/40); break;
+                case 'zun': r = (4 + 2 * Math.sin(h/1.11 * 0.4)) * 1.11; break;
+                default: r = 5;
+            }
+            r *= (1 + 0.06 * Math.sin(theta * 12 + h * 0.5) * Math.cos(theta * 8 - h));
+            return { x: r * Math.cos(theta), y: h, z: r * Math.sin(theta) };
+        }
+
+        function getHeritagePattern(theta, h, jarIdx) {
+            let mask = 0;
+            const normH = (h + 10) / 20; 
+            if (normH > 0.85 || normH < 0.15) mask = Math.sin(theta * 24) > 0.3 ? 0.8 : 0;
+            const type = jarIdx % 4;
+            if (normH > 0.2 && normH < 0.8) {
+                if (type === 0) mask += Math.pow(Math.abs(Math.sin(theta * 3 + h * 0.5) * Math.cos(h * 0.8)), 2.0);
+                else if (type === 1) { mask += (Math.sin(theta * 6 + h) > 0.7 && Math.sin(h * 2) > 0.2) ? 0.9 : 0; mask += Math.sin(theta * 20 + h * 5) * 0.2; }
+                else if (type === 2) { const branch = Math.abs(theta % 1.5 - 0.75) < 0.05 + Math.sin(h)*0.02; const bird = (Math.hypot(theta % 1.5 - 0.75, normH - 0.5) < 0.08); mask += (branch || bird) ? 1.0 : 0; }
+                else { const butterfly = Math.sin(theta * 10) * Math.cos(h * 5) > 0.85; const grass = Math.sin(theta * 50 + h * 2) * Math.exp(-Math.pow(normH-0.2, 2)*50) > 0.5; mask += (butterfly || grass) ? 1.0 : 0; }
+            }
+            return Math.min(1.0, mask);
+        }
+
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 5, 45);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            const controls = new OrbitControls(camera, renderer.domElement);
+            controls.autoRotate = true;
+            controls.autoRotateSpeed = 0.5;
+
+            geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colArr, 3));
+            
+            const mat = new THREE.PointsMaterial({ size: 0.12, vertexColors: true, transparent: true, opacity: 0.8 });
+            particles = new THREE.Points(geometry, mat);
+            scene.add(particles);
+
+            createMenu();
+            updateVessel(0);
+            animate();
+
+            window.addEventListener('keydown', (e) => { if(e.key.toLowerCase() === 'p') window.print(); });
+        }
+
+        function createMenu() {
+            const list = document.getElementById('btn-list');
+            shapeList.forEach((v, i) => {
+                const btn = document.createElement('button');
+                btn.className = 'nav-btn';
+                btn.id = 'btn-' + i;
+                btn.innerText = `${i+1}. ${v.name} (${v.zh})`;
+                btn.onclick = () => updateVessel(i);
+                list.appendChild(btn);
+            });
+        }
+
+        function updateVessel(idx) {
+            currentIdx = idx;
+            const shape = shapeList[idx];
+            document.getElementById('vessel-name').innerText = shape.name;
+            document.getElementById('vessel-desc').innerText = `Traditional ${shape.zh} Form`;
+            
+            // Highlight active button
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('btn-' + idx).classList.add('active');
+
+            // Rebuild positions for the selected vessel
+            for (let i = 0; i < mainCount; i++) {
+                const theta = Math.random() * Math.PI * 2;
+                const h = (Math.random() - 0.5) * 20;
+                const pt = getJarPoint(shape.id, theta, h);
+                const pm = getHeritagePattern(theta, h, idx);
+
+                posArr[i*3] = pt.x; posArr[i*3+1] = pt.y; posArr[i*3+2] = pt.z;
+                
+                if (pm > 0.5) {
+                    colArr[i*3] = 1.0; colArr[i*3+1] = 0.7; colArr[i*3+2] = 0.2;
+                } else {
+                    colArr[i*3] = 0.1; colArr[i*3+1] = 0.4; colArr[i*3+2] = 0.8;
+                }
+            }
+            geometry.attributes.position.needsUpdate = true;
+            geometry.attributes.color.needsUpdate = true;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+
+        init();
+    </script>
+</body>
+</html> -->
